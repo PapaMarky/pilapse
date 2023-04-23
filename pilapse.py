@@ -132,61 +132,60 @@ class PilapseConfig(argparse.Namespace):
         general.add_argument('--nomotion', action='store_true',
                              help='Disable motion detection. Use this, all-frames and framerate when making a timelapse')
 
+        if self.save_config:
+            self.dump_to_json(indent=2)
+            sys.exit(1)
+
+        if self.loglevel is not None:
+            oldlevel = logging.getLevelName(logging.getLogger().getEffectiveLevel())
+            level = self.loglevel.upper()
+            logging.info(f'Setting log level from {oldlevel} to {level}')
+            logging.getLogger().setLevel(level)
+
         return self._parser
 def parse_command_line():
     myconfig = PilapseConfig()
-
-    config = myconfig.parse_args()
-
-    if config.save_config:
-        config.dump_to_json(indent=2)
-        sys.exit(1)
-
-    if config.loglevel is not None:
-        oldlevel = logging.getLevelName(logging.getLogger().getEffectiveLevel())
-        level = config.loglevel.upper()
-        logging.info(f'Setting log level from {oldlevel} to {level}')
-        logging.getLogger().setLevel(level)
+    myconfig.parse_args()
 
     logging.debug(f'CMD: {" ".join(sys.argv)}')
     logging.debug(f'MYCONFIG: {myconfig}')
     for attr, value in myconfig.__dict__.items():
         logging.debug(f'{attr:10}: {value}')
 
-    config.bottom = int(config.bottom * config.height)
-    config.top = int(config.top * config.height)
-    config.left = int(config.left * config.width)
-    config.right = int(config.right * config.width)
+    myconfig.bottom = int(myconfig.bottom * myconfig.height)
+    myconfig.top = int(myconfig.top * myconfig.height)
+    myconfig.left = int(myconfig.left * myconfig.width)
+    myconfig.right = int(myconfig.right * myconfig.width)
 
-    if config.shrinkto is not None:
+    if myconfig.shrinkto is not None:
         logging.debug('shrinkto is set')
-        if config.shrinkto <= 1.0:
+        if myconfig.shrinkto <= 1.0:
             logging.debug('shrink to is float')
-            config.shrinkto = config.height * config.shrinkto
-        config.shrinkto = int(config.shrinkto)
+            myconfig.shrinkto = myconfig.height * myconfig.shrinkto
+        myconfig.shrinkto = int(myconfig.shrinkto)
 
-    if '%' in config.outdir:
-        config.outdir = datetime.strftime(datetime.now(), config.outdir)
-    os.makedirs(config.outdir, exist_ok=True)
+    if '%' in myconfig.outdir:
+        myconfig.outdir = datetime.strftime(datetime.now(), myconfig.outdir)
+    os.makedirs(myconfig.outdir, exist_ok=True)
 
-    if config.stop_at is not None:
-        logging.debug(f'Setting stop-at: {config.stop_at}')
-        (hour, minute, second) = config.stop_at.split(':')
-        config.stop_at = datetime.now().replace(hour=int(hour), minute=int(minute), second=int(second), microsecond=0)
+    if myconfig.stop_at is not None:
+        logging.debug(f'Setting stop-at: {myconfig.stop_at}')
+        (hour, minute, second) = myconfig.stop_at.split(':')
+        myconfig.stop_at = datetime.now().replace(hour=int(hour), minute=int(minute), second=int(second), microsecond=0)
 
-    if config.framerate is not None:
-        if not config.all_frames:
-            logging.warning(f'framerate set to {config.framerate}, but all-frames not set. Ignoring framerate.')
-            config.framerate = 0
+    if myconfig.framerate is not None:
+        if not myconfig.all_frames:
+            logging.warning(f'framerate set to {myconfig.framerate}, but all-frames not set. Ignoring framerate.')
+            myconfig.framerate = 0
         else:
-            config.framerate_delta = timedelta(seconds=config.framerate)
-            config.nomotion = True
+            myconfig.framerate_delta = timedelta(seconds=myconfig.framerate)
+            myconfig.nomotion = True
 
-    if config.label_rgb is not None:
-        (R,G,B) = config.label_rgb.split(',')
-        config.label_rgb = BGR(int(R), int(G), int(B))
+    if myconfig.label_rgb is not None:
+        (R,G,B) = myconfig.label_rgb.split(',')
+        myconfig.label_rgb = BGR(int(R), int(G), int(B))
 
-    return config
+    return myconfig
 
 
 # based on this:
