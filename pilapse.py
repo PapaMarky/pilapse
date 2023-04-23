@@ -34,10 +34,12 @@ logging.basicConfig(filename='pilapse.log',
                     format='%(asctime)s|%(levelname)s|%(message)s'
                     )
 
-class PilapseConfig(argparse.Namespace):
+class Config(argparse.Namespace):
     def __init__(self):
         self._version = '1.0'
         self._parser = None
+        self.save_config = False
+        self.loglevel = 'info'
         self.create_parser()
 
     def dump_to_log(self):
@@ -59,9 +61,16 @@ class PilapseConfig(argparse.Namespace):
         return self._parser.parse_args(namespace=self)
 
     def create_parser(self):
+        raise Exception('Not implemented in base class')
+
+class PilapseConfig(Config):
+    def __init__(self):
+        super().__init__()
+        self.dump_to_log()
+    def create_parser(self):
         self._parser = argparse.ArgumentParser(description='Capture a series of image frames. Includes functionality for '
-                                                     'detecting motion and '
-                                                     'creating a timelapse with motion detection')
+                                                           'detecting motion and '
+                                                           'creating a timelapse with motion detection')
 
         motion = self._parser.add_argument_group('Motion Detection', 'Parameters that control motion detection')
         motion.add_argument('--mindiff', '-m', type=int, help='Minimum size of "moving object" to detect', default=75)
@@ -132,6 +141,8 @@ class PilapseConfig(argparse.Namespace):
         general.add_argument('--nomotion', action='store_true',
                              help='Disable motion detection. Use this, all-frames and framerate when making a timelapse')
 
+        self.dump_to_log()
+
         if self.save_config:
             self.dump_to_json(indent=2)
             sys.exit(1)
@@ -143,6 +154,7 @@ class PilapseConfig(argparse.Namespace):
             logging.getLogger().setLevel(level)
 
         return self._parser
+
 def parse_command_line():
     myconfig = PilapseConfig()
     myconfig.parse_args()
