@@ -1,0 +1,50 @@
+# SSH setup
+
+https://www.thegeekstuff.com/2008/11/3-steps-to-perform-ssh-login-without-password-using-ssh-keygen-ssh-copy-id/
+
+## From MacBook:
+ssh-keygen
+ssh-copy-id -i ~/.ssh/id_rpi.pub pi@picam002.local
+
+* add new pi to ~/.ssh/config
+
+# Pi SW setup
+
+* if using v1 camera setup legacy camera stack (requires reboot)
+sudo raspi-config
+
+sudo apt update
+sudo apt upgrade -y
+sudo apt install emacs python3-pip screen -y
+pip -V
+
+* picamera2 is pre-installed, need to modify timelapse.py to use pycamera2
+** NOTE: picamera2 doesn't seem to work. It doesn't detect cameras (v1 cam using legacy stack)
+* scp cam-app from somewhere
+
+pip install flask
+python app.py
+* Test from browser
+
+* scp timelapse from somewhere
+pip install picamera
+
+## Install OpenCV
+sudo apt-get install build-essential cmake pkg-config libjpeg-dev libtiff5-dev libjasper-dev libpng-dev libavcodec-dev libavformat-dev libswscale-dev libv4l-dev libxvidcore-dev libx264-dev libfontconfig1-dev libcairo2-dev libgdk-pixbuf2.0-dev libpango1.0-dev libgtk2.0-dev libgtk-3-dev libatlas-base-dev gfortran libhdf5-dev libhdf5-serial-dev libhdf5-103 python3-pyqt5 python3-dev -y
+
+* NOTE: you must suppoy the version or it trys to build the bleeding edge version and (for me) that runs for an hour and then fails
+pip install opencv-python==4.5.3.56
+
+* ImportError: libIlmImf-2_5.so.25: cannot open shared object file: No such file or directory
+sudo apt install libopenexr-dev
+
+* ModuleNotFoundError: No module named 'imutils'
+sudo pip install imutils
+
+? pip install -U numpy
+
+
+
+# To use pilapse.py
+
+pip install pause
