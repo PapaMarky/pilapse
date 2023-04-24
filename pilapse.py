@@ -57,8 +57,31 @@ class Config(argparse.Namespace):
             json_file.write(json.dumps(self.__dict__, indent=indent))
         self.__dict__['_parser'] = parser
 
-    def parse_args(self):
-        return self._parser.parse_args(namespace=self)
+    def load_from_json(self, filename):
+        try:
+            with open(filename) as json_file:
+                new_config = json.load(json_file)
+                # validate the newly loaded config
+                temp = PilapseConfig()
+                temp.parse_args(args=[])
+                temp.__dict__.pop('_parser')
+                logging.info(f'DEF CONFIG: {temp.__dict__}')
+                logging.info(f'NEW CONFIG: {new_config}')
+                for key, value in temp.__dict__.items():
+                    if not key in new_config:
+                        raise Exception(f'Parameter Not Found in config: {key}')
+                    logging.info(f'{key:15}: {value}')
+                    #mstring = "MATCH" if value == new_config[key] else "NOT MATCHING"
+                    logging.info(f'{"":15}  {str(new_config[key]):20}')
+                    logging.info(f'--------------')
+        except Exception as e:
+            logging.exception(f'Exception loading {filename}')
+            raise e
+
+    def parse_args(self, args=None):
+        if not self._parser:
+            self.create_parser()
+        return self._parser.parse_args(args=args, namespace=self)
 
     def create_parser(self):
         raise Exception('Not implemented in base class')
