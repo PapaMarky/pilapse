@@ -46,8 +46,11 @@ class Config():
 
     def dump_to_log(self, config):
         logging.info('-- START CONFIG DUMP --')
-        for attr, value in config.__dict__.items():
-            logging.info(f'{attr:>15}: {value}')
+        if config is None:
+            logging.error(' - Bad Config')
+        else:
+            for attr, value in config.__dict__.items():
+                logging.info(f'{attr:>15}: {value}')
         logging.info('-- END CONFIG DUMP --')
 
     def dump_to_json(self, filename='pilapse-config.json', indent=0):
@@ -213,11 +216,16 @@ class PilapseConfig(Config):
                              help='Write a test frame with layout information.')
         general.add_argument('--show-motion', action='store_true',
                              help='Highlight motion even when debug is false.')
-        general.add_argument('--stop-at', type=str,
-                             help='Stop loop when time reaches "stop-at". Format: HH:MM:SS with HH in 24 hour format')
         general.add_argument('--nomotion', action='store_true',
                              help='Disable motion detection. Use this, all-frames and framerate when making a timelapse')
 
+        timing = parser.add_argument_group('Timing', 'Control when capture starts / stops')
+        timing.add_argument('--stop-at', type=str,
+                             help='Stop loop when time reaches "stop-at". Format: HH:MM:SS with HH in 24 hour format')
+        timing.add_argument('--run-from', type=str,
+                             help='Only run after this time of day. (Format: HH:MM:SS with HH in 24 hour format)')
+        timing.add_argument('--run-until', type=str,
+                             help='Only run until this time of day. (Format: HH:MM:SS with HH in 24 hour format)')
         return parser
 
     def load_from_list(self, arglist=None):
@@ -234,14 +242,18 @@ class PilapseConfig(Config):
             logging.info(f'Setting log level from {oldlevel} to {level}')
             logging.getLogger().setLevel(level)
 
+        if config.stop_at is not None and (config.run_from is not None or config.run_until is not None):
+            print(f'If stop-at is set, run-until and run-from cannot be set')
+            return None
+
+        if config.run_from is not None or config.run_until is not None:
+            # if either are set, both must be set.
+            if config.run_from is None or config.run_until is None:
+                print('if either run-from or run-until are set, both must be set')
+                return None
+        return config
 
 def process_config(myconfig):
-
-    logging.debug(f'CMD: {" ".join(sys.argv)}')
-    logging.debug(f'MYCONFIG: {myconfig}')
-    for attr, value in myconfig.__dict__.items():
-        logging.debug(f'{attr:10}: {value}')
-
     myconfig.bottom = int(myconfig.bottom * myconfig.height)
     myconfig.top = int(myconfig.top * myconfig.height)
     myconfig.left = int(myconfig.left * myconfig.width)
@@ -262,6 +274,14 @@ def process_config(myconfig):
         logging.debug(f'Setting stop-at: {myconfig.stop_at}')
         (hour, minute, second) = myconfig.stop_at.split(':')
         myconfig.stop_at = datetime.now().replace(hour=int(hour), minute=int(minute), second=int(second), microsecond=0)
+
+    if myconfig.run_from is not None:
+        logging.debug(f'Setting run-until: {myconfig.run_from}')
+        myconfig.__dict__['run_from_t'] = datetime.strptime(myconfig.run_from, '%H:%M:%S').time()
+
+    if myconfig.run_until is not None:
+        logging.debug(f'Setting run-until: {myconfig.run_until}')
+        myconfig.__dict__['run_until_t'] = datetime.strptime(myconfig.run_until, '%H:%M:%S').time()
 
     if myconfig.framerate is not None:
         if not myconfig.all_frames:
@@ -459,11 +479,15 @@ signal.signal(signal.SIGTERM, exit_gracefully)
 
 def main():
     pilapse_config = PilapseConfig()
-
     config = pilapse_config.load_from_list()
 
     pilapse_config.dump_to_log(config)
     config = process_config(config)
+    if config is None:
+        sys.exit(1)
+
+    logging.debug(f'CMD: {" ".join(sys.argv)}')
+    pilapse_config.dump_to_log(config)
 
     camera = PiCamera()
     setup_camera(camera, config)
@@ -477,8 +501,22 @@ def main():
     start_time = datetime.now()
     logging.info(f'Starting Timelapse ({start_time.strftime("%Y/%m/%d %H:%M:%S")})')
     nextframe_time = None
+    paused = False if config.run_from is None else True
     while not time_to_die:
         now = datetime.now()
+        if config.run_until is not None and not paused:
+            if now.time() >= config.run_until_t:
+                logging.info(f'Pausing because run_until: {config.run_until}')
+                paused = True
+
+        if paused:
+            if now.time() <= config.run_from_t:
+                logging.info(f'Ending pause because run_from: {config.run_from}')
+                paused = False
+
+        if paused:
+            time.sleep(1)
+
         if config.framerate:
             nextframe_time = now + config.framerate_delta
 
