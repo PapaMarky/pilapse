@@ -34,39 +34,47 @@ logging.basicConfig(filename='pilapse.log',
                     format='%(asctime)s|%(levelname)s|%(message)s'
                     )
 
-class Config(argparse.Namespace):
+class Config():
+
     def __init__(self):
         self._version = '1.0'
-        self._parser = None
-        self.save_config = False
-        self.loglevel = 'info'
-        self.create_parser()
 
-    def dump_to_log(self):
+    def get_defaults(self):
+        parser = self.create_parser()
+        config = self.load_from_list()
+        return config
+
+    def dump_to_log(self, config):
         logging.info('-- START CONFIG DUMP --')
-        for attr, value in self.__dict__.items():
+        for attr, value in config.__dict__.items():
             logging.info(f'{attr:>15}: {value}')
         logging.info('-- END CONFIG DUMP --')
 
     def dump_to_json(self, filename='pilapse-config.json', indent=0):
         logging.info(f'Saving config to {filename}..')
-        parser = self.__dict__.pop('_parser')
+        parser = self.create_parser()
+
         if 'save-config' in self.__dict__:
             self.__dict__.pop('save-config')
         with open(filename, 'w') as json_file:
             json_file.write(json.dumps(self.__dict__, indent=indent))
         self.__dict__['_parser'] = parser
 
+    def clean_for_export(self, config:argparse.Namespace):
+        pass
+
     def load_from_json(self, filename):
         try:
             with open(filename) as json_file:
                 new_config = json.load(json_file)
+
                 # validate the newly loaded config
                 temp = PilapseConfig()
-                temp.parse_args(args=[])
-                temp.__dict__.pop('_parser')
-                logging.info(f'DEF CONFIG: {temp.__dict__}')
+                default_config = temp.load_from_list(arglist=[])
+
+                logging.info(f'DEF CONFIG: {default_config}')
                 logging.info(f'NEW CONFIG: {new_config}')
+
                 for key, value in temp.__dict__.items():
                     if not key in new_config:
                         raise Exception(f'Parameter Not Found in config: {key}')
@@ -78,24 +86,70 @@ class Config(argparse.Namespace):
             logging.exception(f'Exception loading {filename}')
             raise e
 
-    def parse_args(self, args=None):
-        if not self._parser:
-            self.create_parser()
-        return self._parser.parse_args(args=args, namespace=self)
+    def load_from_list(self, arglist=None):
+        parser = self.create_parser()
+        namespace = argparse.Namespace()
+        config = parser.parse_args(args=arglist, namespace=namespace)
+        config.version = self._version
+        return config
 
     def create_parser(self):
         raise Exception('Not implemented in base class')
 
+    def process_for_import(self, myconfig):
+        logging.debug(f'CMD: {" ".join(sys.argv)}')
+        logging.debug(f'MYCONFIG: {myconfig}')
+        for attr, value in myconfig.__dict__.items():
+            logging.debug(f'{attr:10}: {value}')
+
+        myconfig.bottom = int(myconfig.bottom * myconfig.height)
+        myconfig.top = int(myconfig.top * myconfig.height)
+        myconfig.left = int(myconfig.left * myconfig.width)
+        myconfig.right = int(myconfig.right * myconfig.width)
+
+        if myconfig.shrinkto is not None:
+            logging.debug('shrinkto is set')
+            if myconfig.shrinkto <= 1.0:
+                logging.debug('shrink to is float')
+                myconfig.shrinkto = myconfig.height * myconfig.shrinkto
+            myconfig.shrinkto = int(myconfig.shrinkto)
+
+        if '%' in myconfig.outdir:
+            myconfig.outdir = datetime.strftime(datetime.now(), myconfig.outdir)
+        os.makedirs(myconfig.outdir, exist_ok=True)
+
+        if myconfig.stop_at is not None:
+            logging.debug(f'Setting stop-at: {myconfig.stop_at}')
+            (hour, minute, second) = myconfig.stop_at.split(':')
+            myconfig.stop_at = datetime.now().replace(hour=int(hour), minute=int(minute), second=int(second), microsecond=0)
+
+        if myconfig.framerate is not None:
+            if not myconfig.all_frames:
+                logging.warning(f'framerate set to {myconfig.framerate}, but all-frames not set. Ignoring framerate.')
+                myconfig.framerate = 0
+            else:
+                myconfig.framerate_delta = timedelta(seconds=myconfig.framerate)
+                myconfig.nomotion = True
+
+        if myconfig.label_rgb is not None:
+            (R,G,B) = myconfig.label_rgb.split(',')
+            myconfig.label_rgb = BGR(int(R), int(G), int(B))
+
+        return myconfig
+
+    def get_config(self):
+        return(self.config)
+
 class PilapseConfig(Config):
     def __init__(self):
         super().__init__()
-        self.dump_to_log()
+
     def create_parser(self):
-        self._parser = argparse.ArgumentParser(description='Capture a series of image frames. Includes functionality for '
+        parser = argparse.ArgumentParser(description='Capture a series of image frames. Includes functionality for '
                                                            'detecting motion and '
                                                            'creating a timelapse with motion detection')
 
-        motion = self._parser.add_argument_group('Motion Detection', 'Parameters that control motion detection')
+        motion = parser.add_argument_group('Motion Detection', 'Parameters that control motion detection')
         motion.add_argument('--mindiff', '-m', type=int, help='Minimum size of "moving object" to detect', default=75)
         motion.add_argument('--top', '-t', type=float, help='top of region of interest. (0.0 - 1.0) '
                                                             'Ignore any motion above this',
@@ -124,7 +178,7 @@ class PilapseConfig(Config):
                             help='Turn on debugging of motion analysis. Shows features too small or outside' \
                                  'region of interest')
 
-        frame = self._parser.add_argument_group('Frame Setup', 'Parameters that control the generated frames')
+        frame = parser.add_argument_group('Frame Setup', 'Parameters that control the generated frames')
         frame.add_argument('--width', '-W', type=int, help='width of each frame', default=640)
         frame.add_argument('--height', '-H', type=int, help='height of each frame', default=480)
         frame.add_argument('--show-name', action='store_true',
@@ -138,7 +192,7 @@ class PilapseConfig(Config):
         frame.add_argument('--prefix', type=str, default='snap',
                            help='Prefix frame filenames with this string')
 
-        timelapse = self._parser.add_argument_group('Timelapse', 'Parameters that control timelapse')
+        timelapse = parser.add_argument_group('Timelapse', 'Parameters that control timelapse')
         timelapse.add_argument('--all-frames', action='store_true',
                                help='Save all frames even when no motion is detected')
         timelapse.add_argument('--framerate', type=int, default=None,
@@ -149,7 +203,7 @@ class PilapseConfig(Config):
         # Internal variable that gives us a place to store the framerate as a timedelta
         timelapse.add_argument('--framerate-delta', type=timedelta, default=None, help= argparse.SUPPRESS)
 
-        general = self._parser.add_argument_group('General', 'Miscellaneous parameters')
+        general = parser.add_argument_group('General', 'Miscellaneous parameters')
         general.add_argument('--loglevel', type=str,
                              help='Set the log level.')
         general.add_argument('--save-config', action='store_true', help='Save config to jsonfile and exit.')
@@ -164,23 +218,24 @@ class PilapseConfig(Config):
         general.add_argument('--nomotion', action='store_true',
                              help='Disable motion detection. Use this, all-frames and framerate when making a timelapse')
 
-        self.dump_to_log()
+        return parser
 
-        if self.save_config:
+    def load_from_list(self, arglist=None):
+        config = super().load_from_list(arglist=arglist)
+        self.dump_to_log(config)
+
+        if config.save_config:
             self.dump_to_json(indent=2)
             sys.exit(1)
 
-        if self.loglevel is not None:
+        if config.loglevel is not None:
             oldlevel = logging.getLevelName(logging.getLogger().getEffectiveLevel())
-            level = self.loglevel.upper()
+            level = config.loglevel.upper()
             logging.info(f'Setting log level from {oldlevel} to {level}')
             logging.getLogger().setLevel(level)
 
-        return self._parser
 
-def parse_command_line():
-    myconfig = PilapseConfig()
-    myconfig.parse_args()
+def process_config(myconfig):
 
     logging.debug(f'CMD: {" ".join(sys.argv)}')
     logging.debug(f'MYCONFIG: {myconfig}')
@@ -403,8 +458,12 @@ signal.signal(signal.SIGINT, exit_gracefully)
 signal.signal(signal.SIGTERM, exit_gracefully)
 
 def main():
-    config = parse_command_line()
-    config.dump_to_log()
+    pilapse_config = PilapseConfig()
+
+    config = pilapse_config.load_from_list()
+
+    pilapse_config.dump_to_log(config)
+    config = process_config(config)
 
     camera = PiCamera()
     setup_camera(camera, config)
