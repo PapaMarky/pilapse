@@ -53,7 +53,7 @@ class Config():
                 logging.info(f'{attr:>15}: {value}')
         logging.info('-- END CONFIG DUMP --')
 
-    def dump_to_json(self, filename='pilapse-config.json', indent=0):
+    def dump_to_json(self, filename='motion-config.json', indent=0):
         logging.info(f'Saving config to {filename}..')
         parser = self.create_parser()
 
@@ -72,7 +72,7 @@ class Config():
                 new_config = json.load(json_file)
 
                 # validate the newly loaded config
-                temp = PilapseConfig()
+                temp = MotionConfig()
                 default_config = temp.load_from_list(arglist=[])
 
                 logging.info(f'DEF CONFIG: {default_config}')
@@ -99,58 +99,15 @@ class Config():
     def create_parser(self):
         raise Exception('Not implemented in base class')
 
-    def process_for_import(self, myconfig):
-        logging.debug(f'CMD: {" ".join(sys.argv)}')
-        logging.debug(f'MYCONFIG: {myconfig}')
-        for attr, value in myconfig.__dict__.items():
-            logging.debug(f'{attr:10}: {value}')
-
-        myconfig.bottom = int(myconfig.bottom * myconfig.height)
-        myconfig.top = int(myconfig.top * myconfig.height)
-        myconfig.left = int(myconfig.left * myconfig.width)
-        myconfig.right = int(myconfig.right * myconfig.width)
-
-        if myconfig.shrinkto is not None:
-            logging.debug('shrinkto is set')
-            if myconfig.shrinkto <= 1.0:
-                logging.debug('shrink to is float')
-                myconfig.shrinkto = myconfig.height * myconfig.shrinkto
-            myconfig.shrinkto = int(myconfig.shrinkto)
-
-        if '%' in myconfig.outdir:
-            myconfig.outdir = datetime.strftime(datetime.now(), myconfig.outdir)
-        os.makedirs(myconfig.outdir, exist_ok=True)
-
-        if myconfig.stop_at is not None:
-            logging.debug(f'Setting stop-at: {myconfig.stop_at}')
-            (hour, minute, second) = myconfig.stop_at.split(':')
-            myconfig.stop_at = datetime.now().replace(hour=int(hour), minute=int(minute), second=int(second), microsecond=0)
-
-        if myconfig.framerate is not None:
-            if not myconfig.all_frames:
-                logging.warning(f'framerate set to {myconfig.framerate}, but all-frames not set. Ignoring framerate.')
-                myconfig.framerate = 0
-            else:
-                myconfig.framerate_delta = timedelta(seconds=myconfig.framerate)
-                myconfig.nomotion = True
-
-        if myconfig.label_rgb is not None:
-            (R,G,B) = myconfig.label_rgb.split(',')
-            myconfig.label_rgb = BGR(int(R), int(G), int(B))
-
-        return myconfig
-
     def get_config(self):
         return(self.config)
 
-class PilapseConfig(Config):
+class MotionConfig(Config):
     def __init__(self):
         super().__init__()
 
     def create_parser(self):
-        parser = argparse.ArgumentParser(description='Capture a series of image frames. Includes functionality for '
-                                                           'detecting motion and '
-                                                           'creating a timelapse with motion detection')
+        parser = argparse.ArgumentParser(description='Capture images when motion is detected')
 
         motion = parser.add_argument_group('Motion Detection', 'Parameters that control motion detection')
         motion.add_argument('--mindiff', '-m', type=int, help='Minimum size of "moving object" to detect', default=75)
@@ -170,54 +127,27 @@ class PilapseConfig(Config):
         motion.add_argument('--shrinkto', type=float,
                             help='Shrink images to this height for analysis. This can speed up analysis. '
                                  'If this value is a float, it will be interpreted as percentage', default=None)
-        motion.add_argument('--save-diffs', action='store_true',
-                            help='also save the diffed images for debugging')
         motion.add_argument('--threshold', type=int,
                             help='cut off threshold for detecting changes (0 - 255)',
                             default=25)
         motion.add_argument('--dilation', type=int, default=3,
                             help='Number of dilation iterations to perform')
-        motion.add_argument('--debug', action="store_true",
-                            help='Turn on debugging of motion analysis. Shows features too small or outside' \
-                                 'region of interest')
+        motion.add_argument('--all-frames', action='store_true',
+                               help='Save all frames even when no motion is detected')
 
         frame = parser.add_argument_group('Frame Setup', 'Parameters that control the generated frames')
         frame.add_argument('--width', '-W', type=int, help='width of each frame', default=640)
         frame.add_argument('--height', '-H', type=int, help='height of each frame', default=480)
-        frame.add_argument('--show-name', action='store_true',
-                           help='Write the file name (timestamp) on each frame')
-        frame.add_argument('--label-rgb', type=str,
-                           help='Set the color of the timestamp on each frame. '
-                                'FORMAT: comma separated integers between 0 and 255, no spaces "R,G,B" ')
         frame.add_argument('--outdir', type=str,
                            help='directory where frame files will be written.',
                            default='./%Y%m%d')
-        frame.add_argument('--prefix', type=str, default='snap',
+        frame.add_argument('--prefix', type=str, default='motion',
                            help='Prefix frame filenames with this string')
-
-        timelapse = parser.add_argument_group('Timelapse', 'Parameters that control timelapse')
-        timelapse.add_argument('--all-frames', action='store_true',
-                               help='Save all frames even when no motion is detected')
-        timelapse.add_argument('--framerate', type=int, default=None,
-                               help='When "all-frames" is set, "framerate" limits how often a new frame is taken. '
-                                    'Int value. Units is seconds. EX. Setting framerate to "3" will take a frame every'
-                                    '3 seconds. Defaults to 0 which means "as fast as you can" '
-                                    'Setting framerate and all-frames imply "nomotion"')
-        # Internal variable that gives us a place to store the framerate as a timedelta
-        timelapse.add_argument('--framerate-delta', type=timedelta, default=None, help= argparse.SUPPRESS)
-
-        general = parser.add_argument_group('General', 'Miscellaneous parameters')
-        general.add_argument('--loglevel', type=str,
-                             help='Set the log level.')
-        general.add_argument('--save-config', action='store_true', help='Save config to jsonfile and exit.')
-        general.add_argument('--nframes', type=int,
-                             help='Stop after writing this many frames. (useful for testing setup)')
-        general.add_argument('--testframe', action='store_true',
-                             help='Write a test frame with layout information.')
-        general.add_argument('--show-motion', action='store_true',
-                             help='Highlight motion even when debug is false.')
-        general.add_argument('--nomotion', action='store_true',
-                             help='Disable motion detection. Use this, all-frames and framerate when making a timelapse')
+        frame.add_argument('--show-name', action='store_true',
+                           help='Write a timestamp on each frame')
+        frame.add_argument('--label-rgb', type=str,
+                           help='Set the color of the timestamp on each frame. '
+                                'FORMAT: comma separated integers between 0 and 255, no spaces EX: "R,G,B" ')
 
         timing = parser.add_argument_group('Timing', 'Control when capture starts / stops')
         timing.add_argument('--stop-at', type=str,
@@ -226,6 +156,25 @@ class PilapseConfig(Config):
                              help='Only run after this time of day. (Format: HH:MM:SS with HH in 24 hour format)')
         timing.add_argument('--run-until', type=str,
                              help='Only run until this time of day. (Format: HH:MM:SS with HH in 24 hour format)')
+        timing.add_argument('--nframes', type=int,
+                             help='Stop after writing this many frames. (useful for testing setup)')
+
+        general = parser.add_argument_group('General', 'Miscellaneous parameters')
+        general.add_argument('--loglevel', type=str,
+                             help='Set the log level.')
+        general.add_argument('--save-config', action='store_true', help='Save config to jsonfile and exit.')
+
+        debugging = parser.add_argument_group('Debbuging / Troubleshooting')
+        debugging.add_argument('--save-diffs', action='store_true',
+                               help='also save the diffed images for debugging')
+        debugging.add_argument('--debug', action="store_true",
+                               help='Turn on debugging of motion analysis. Shows features too small or outside' \
+                                    'region of interest')
+        debugging.add_argument('--show-motion', action='store_true',
+                               help='Highlight motion even when debug is false.')
+        debugging.add_argument('--testframe', action='store_true',
+                               help='Write a test frame with layout information.')
+
         return parser
 
     def load_from_list(self, arglist=None):
@@ -282,14 +231,6 @@ def process_config(myconfig):
     if myconfig.run_until is not None:
         logging.debug(f'Setting run-until: {myconfig.run_until}')
         myconfig.__dict__['run_until_t'] = datetime.strptime(myconfig.run_until, '%H:%M:%S').time()
-
-    if myconfig.framerate is not None:
-        if not myconfig.all_frames:
-            logging.warning(f'framerate set to {myconfig.framerate}, but all-frames not set. Ignoring framerate.')
-            myconfig.framerate = 0
-        else:
-            myconfig.framerate_delta = timedelta(seconds=myconfig.framerate)
-            myconfig.nomotion = True
 
     if myconfig.label_rgb is not None:
         (R,G,B) = myconfig.label_rgb.split(',')
@@ -478,7 +419,7 @@ signal.signal(signal.SIGINT, exit_gracefully)
 signal.signal(signal.SIGTERM, exit_gracefully)
 
 def main():
-    pilapse_config = PilapseConfig()
+    pilapse_config = MotionConfig()
     config = pilapse_config.load_from_list()
 
     pilapse_config.dump_to_log(config)
@@ -499,8 +440,7 @@ def main():
     nframes = 0
     keepers = 0
     start_time = datetime.now()
-    logging.info(f'Starting Timelapse ({start_time.strftime("%Y/%m/%d %H:%M:%S")})')
-    nextframe_time = None
+    logging.info(f'Starting Motion Capture ({start_time.strftime("%Y/%m/%d %H:%M:%S")})')
     paused = False if config.run_from is None else True
     while not time_to_die:
         now = datetime.now()
@@ -516,9 +456,6 @@ def main():
 
         if paused:
             time.sleep(1)
-
-        if config.framerate:
-            nextframe_time = now + config.framerate_delta
 
         if config.nframes and nframes > config.nframes:
             logging.info(f'Reached limit ({config.nframes} frames). Stopping.')
@@ -561,16 +498,9 @@ def main():
                 logging.info(f'TEST IMAGE: {new_name_motion}, top: {config.top}, bottom: {config.bottom}, left: {config.left}')
                 annotate_frame(copy, annotatation, config)
                 cv2.imwrite(os.path.join(config.outdir, new_name_motion), copy)
-            elif config.nomotion:
-                annotate_frame(new, annotatation, config)
-                cv2.imwrite(os.path.join(config.outdir, new_name), new)
 
         elif original is not None and new is not None:
-            if config.nomotion:
-                copy = new
-                motion_detected = False
-            else:
-                copy, motion_detected = compare_images(original, new, config, fname_base)
+            copy, motion_detected = compare_images(original, new, config, fname_base)
 
             if motion_detected:
                 new_name = new_name_motion
@@ -590,11 +520,6 @@ def main():
                 cv2.imwrite(os.path.join(config.outdir, new_name), new)
         original = new
         orig_name = new_name
-
-        if config.framerate:
-            if config.debug:
-                logging.info(f'Pausing until {nextframe_time} (framerate:{config.framerate})')
-            pause.until(nextframe_time)
 
 if __name__ == '__main__':
     try:
