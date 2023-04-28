@@ -1,0 +1,19 @@
+{
+  "debug": false,
+  "width": 640,
+  "height": 480,
+  "show_name": false,
+  "label_rgb": null,
+  "outdir": "./%Y%m%d",
+  "prefix": "snap",
+  "framerate": null,
+  "framerate_delta": null,
+  "loglevel": null,
+  "nframes": null,
+  "testframe": false,
+  "stop_at": null,
+  "run_from": null,
+  "run_until": null,
+  "version": "1.0",
+  "save_config": false
+}
