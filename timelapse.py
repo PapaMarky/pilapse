@@ -7,6 +7,7 @@ from datetime import datetime, timedelta
 from picamera import PiCamera
 
 from config import Config
+import pilapse as pl
 
 import cv2
 import logging
@@ -14,8 +15,6 @@ import os
 import sys
 import time
 import pause
-
-time_to_die = False
 
 def BGR(r, g, b):
     return (b, g, r)
@@ -28,14 +27,6 @@ MAGENTA = BGR(255, 0, 255)
 YELLOW = BGR(255, 255, 0)
 ORANGE = BGR(255,165,0)
 WHITE = BGR(255, 255, 255)
-
-
-logging.basicConfig(filename='timelapse.log',
-#                    encoding='utf-8', # doesn't work in py 3.7
-                    level=logging.INFO,
-                    format='%(asctime)s|%(levelname)s|%(message)s'
-                    )
-
 
 class TimelapseConfig(Config):
     def __init__(self):
@@ -89,39 +80,6 @@ class TimelapseConfig(Config):
                              help='Only run until this time of day. (Format: HH:MM:SS with HH in 24 hour format)')
         return parser
 
-    def load_from_list(self, arglist=None):
-        logging.info('loading config from list:')
-        logging.info(arglist)
-        config = super().load_from_list(arglist=arglist)
-        self.dump_to_log(config)
-
-        if config.save_config:
-            config_file = 'timelapse-config.json'
-            logging.info(f'Saving config to {config_file}')
-            config.save_config = False
-            with open(config_file, 'w') as json_file:
-                logging.info(f'Dict Type: {type(config.__dict__)}')
-                logging.info(f'Dict: {config.__dict__}')
-                json_file.write(json.dumps(config.__dict__, indent=2))
-            die()
-
-        if config.loglevel is not None:
-            oldlevel = logging.getLevelName(logging.getLogger().getEffectiveLevel())
-            level = config.loglevel.upper()
-            logging.info(f'Setting log level from {oldlevel} to {level}')
-            logging.getLogger().setLevel(level)
-
-        if config.stop_at is not None and (config.run_from is not None or config.run_until is not None):
-            print(f'If stop-at is set, run-until and run-from cannot be set')
-            return None
-
-        if config.run_from is not None or config.run_until is not None:
-            # if either are set, both must be set.
-            if config.run_from is None or config.run_until is None:
-                print('if either run-from or run-until are set, both must be set')
-                return None
-        return config
-
 
 def process_config(myconfig):
 
@@ -151,70 +109,23 @@ def process_config(myconfig):
 
     return myconfig
 
-def setup_camera(camera, config):
-    logging.info('Setting up camera...')
-    camera.resolution = (config.width, config.height)
-    camera.rotation = 180
-    camera.framerate = 80
-    camera.exposure_mode = 'auto'
-    camera.awb_mode = 'auto'
-    # camera.zoom = (0.2, 0.3, 0.5, 0.5)
-    time.sleep(2)
-    logging.info(f'setup_camera completed: Camera Resolution: {camera.MAX_RESOLUTION}')
-
-def annotate_frame(image, annotaton, config):
-    if annotaton:
-        text_height = 10
-        pos = (text_height, 2 * text_height)
-        font = cv2.FONT_HERSHEY_SIMPLEX
-        size, baseline = cv2.getTextSize(annotaton, font, 1, 3)
-        scale = text_height / size[1]
-        color = config.label_rgb if config.label_rgb is not None else ORANGE
-
-        cv2.putText(image, annotaton, pos, font, scale, color=color)
-        if config.debug:
-            t = f'({config.width:4} x {config.height:4})  ({config.top:4}, {config.left}) - ({config.bottom:4}, {config.right}), mindiff: {config.mindiff} shrinkto: {config.shrinkto}'
-            pos = (text_height, int(config.height - 1.5 * text_height))
-            cv2.putText(image, t, pos, font, scale, color=color)
-def snap_picture(camera, output='frame.png'):
-    logging.debug(f'snap_picture({output})')
-    (w, h) = camera.resolution
-    # output = np.empty((w, h, 3), dtype=np.uint8)
-    camera.capture(output)
-    # camera.capture(output, 'rgb')
-    # return output
-
-def die(status=0):
-    logging.info(f'Time to die')
-    sys.exit(status)
-
-def exit_gracefully(signum, frame):
-    global time_to_die
-    logging.info(f'SHUTTING DOWN due to {signal.Signals(signum).name}')
-    time_to_die = True
-
-signal.signal(signal.SIGINT, exit_gracefully)
-signal.signal(signal.SIGTERM, exit_gracefully)
 
 def main():
-    pid = os.getpid()
-    pidfile = f'timelapse.pid'
-    with open(pidfile, 'w') as pidout:
-        print(f'saving PID in {pidfile}')
-        pidout.write(f'{pid}')
+    pl.create_pid_file()
+
     timelapse_config = TimelapseConfig()
     config = timelapse_config.load_from_list()
 
     timelapse_config.dump_to_log(config)
     config = process_config(config)
     if config is None:
-        die(1)
+        pl.die(1)
 
     logging.debug(f'CMD: {" ".join(sys.argv)}')
     timelapse_config.dump_to_log(config)
 
     camera = PiCamera()
-    setup_camera(camera, config)
+    pl.setup_camera(camera, config)
 
     nframes = 0
     start_time = datetime.now()
@@ -223,7 +134,7 @@ def main():
     paused = False
     report_wait = timedelta(seconds=10)
     report_time = start_time + report_wait
-    while not time_to_die:
+    while not pl.it_is_time_to_die():
         now = datetime.now()
         logging.debug(f'-loop {now}: paused: {paused}, run_until; {config.run_until}')
         if config.run_until is not None and not paused:
@@ -258,7 +169,7 @@ def main():
         nframes += 1
         if config.stop_at and now > config.stop_at:
             logging.info(f'Shutting down due to "stop_at": {config.stop_at.strftime("%Y/%m/%d %H:%M:%S")}')
-            die()
+            pl.die()
         ts = now.strftime('%Y%m%d_%H%M%S.%f')
         fname_base = f'{config.prefix}_{ts}'
         new_name = f'{fname_base}.png'
@@ -266,7 +177,7 @@ def main():
         annotatation = f'{ats}' if config.show_name else None
         new_path = os.path.join(config.outdir, new_name)
         logging.debug(f'About to snap')
-        snap_picture(camera, new_path)
+        pl.snap_picture(camera, new_path)
 
         if nframes == 1 and config.testframe:
             logging.debug(f'Creating Test Frame')
@@ -282,7 +193,7 @@ def main():
                 cv2.line(copy, (x, 0), (x, h), BLUE)
 
             logging.info(f'TEST IMAGE: {new_name_test}')
-            annotate_frame(copy, annotatation, config)
+            pl.annotate_frame(copy, annotatation, config)
             cv2.imwrite(os.path.join(config.outdir, new_name_test), copy)
 
         if config.framerate:
@@ -293,8 +204,8 @@ def main():
 if __name__ == '__main__':
     try:
         main()
-        if time_to_die:
+        if pl.it_is_time_to_die():
             logging.info('Exiting: Graceful shutdown')
     except Exception as e:
         logging.exception(f'Unhandled Exception: {e}')
-        die(1)
+        pl.die(1)

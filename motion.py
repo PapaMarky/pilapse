@@ -7,6 +7,8 @@ from datetime import datetime, timedelta
 from picamera import PiCamera
 
 from config import Config
+import pilapse as pl
+
 
 import cv2
 import imutils
@@ -14,9 +16,6 @@ import logging
 import os
 import sys
 import time
-import pause
-
-time_to_die = False
 
 def BGR(r, g, b):
     return (b, g, r)
@@ -29,17 +28,6 @@ MAGENTA = BGR(255, 0, 255)
 YELLOW = BGR(255, 255, 0)
 ORANGE = BGR(255,165,0)
 WHITE = BGR(255, 255, 255)
-
-logging.basicConfig(filename='motion.log',
-#                    encoding='utf-8', # doesn't work in py 3.7
-                    level=logging.INFO,
-                    format='%(asctime)s|%(levelname)s|%(message)s'
-                    )
-
-def die(status=0):
-    logging.info(f'Time to die')
-    sys.exit(status)
-
 
 class MotionConfig(Config):
     def __init__(self):
@@ -130,7 +118,7 @@ class MotionConfig(Config):
                 logging.info(f'Dict Type: {type(config.__dict__)}')
                 logging.info(f'Dict: {config.__dict__}')
                 json_file.write(json.dumps(config.__dict__, indent=2))
-            die()
+            pl.die()
 
         if config.loglevel is not None:
             oldlevel = logging.getLevelName(logging.getLogger().getEffectiveLevel())
@@ -325,60 +313,38 @@ def compare_images(original, new, config, fname_base):
 
     return copy, motion_detected
 
-def setup_camera(camera, config):
-    logging.info('Setting up camera...')
-    camera.resolution = (config.width, config.height)
-    camera.rotation = 180
-    camera.framerate = 80
-    camera.exposure_mode = 'auto'
-    camera.awb_mode = 'auto'
-    # camera.zoom = (0.2, 0.3, 0.5, 0.5)
-    time.sleep(2)
-    logging.info(f'setup_camera completed: Camera Resolution: {camera.MAX_RESOLUTION}')
-
 def annotate_frame(image, annotaton, config):
     if annotaton:
-        text_height = 10
-        pos = (text_height, 2 * text_height)
-        font = cv2.FONT_HERSHEY_SIMPLEX
-        size, baseline = cv2.getTextSize(annotaton, font, 1, 3)
-        scale = text_height / size[1]
-        color = config.label_rgb if config.label_rgb is not None else ORANGE
+        pl.annotate_frame(image, annotaton, config)
 
         cv2.putText(image, annotaton, pos, font, scale, color=color)
         if config.debug:
+            text_height = 10
+            pos = (text_height, 2 * text_height)
+            font = cv2.FONT_HERSHEY_SIMPLEX
+            size, baseline = cv2.getTextSize(annotaton, font, 1, 3)
+            scale = text_height / size[1]
+            color = config.label_rgb if config.label_rgb is not None else ORANGE
             t = f'({config.width:4} x {config.height:4})  ({config.top:4}, {config.left}) - ({config.bottom:4}, {config.right}), mindiff: {config.mindiff} shrinkto: {config.shrinkto}'
             pos = (text_height, int(config.height - 1.5 * text_height))
             cv2.putText(image, t, pos, font, scale, color=color)
-def snap_picture(camera):
-    (w, h) = camera.resolution
-    # output = np.empty((w, h, 3), dtype=np.uint8)
-    camera.capture('frame.png')
-    # camera.capture(output, 'rgb')
-    # return output
-
-def exit_gracefully(signum, frame):
-    global time_to_die
-    logging.info(f'SHUTTING DOWN due to {signal.Signals(signum).name}')
-    time_to_die = True
-
-signal.signal(signal.SIGINT, exit_gracefully)
-signal.signal(signal.SIGTERM, exit_gracefully)
 
 def main():
+    pl.create_pid_file()
+
     pilapse_config = MotionConfig()
     config = pilapse_config.load_from_list()
 
     pilapse_config.dump_to_log(config)
     config = process_config(config)
     if config is None:
-        die(1)
+        pl.die(1)
 
     logging.debug(f'CMD: {" ".join(sys.argv)}')
     pilapse_config.dump_to_log(config)
 
     camera = PiCamera()
-    setup_camera(camera, config)
+    pl.setup_camera(camera, config)
     original = None
     orig_name = ''
     new = None
@@ -389,7 +355,7 @@ def main():
     start_time = datetime.now()
     logging.info(f'Starting Motion Capture ({start_time.strftime("%Y/%m/%d %H:%M:%S")})')
     paused = False if config.run_from is None else True
-    while not time_to_die:
+    while not pl.it_is_time_to_die():
         now = datetime.now()
         if config.run_until is not None and not paused:
             if now.time() >= config.run_until_t:
@@ -416,14 +382,14 @@ def main():
         nframes += 1
         if config.stop_at and now > config.stop_at:
             logging.info(f'Shutting down due to "stop_at": {config.stop_at.strftime("%Y/%m/%d %H:%M:%S")}')
-            die()
+            pl.die()
         ts = now.strftime('%Y%m%d_%H%M%S.%f')
         fname_base = f'{config.prefix}_{ts}'
         new_name = f'{fname_base}_90.png' if config.save_diffs else f'{fname_base}.png'
         new_name_motion = f'{fname_base}_90M.png'
         ats = now.strftime('%Y/%m/%d %H:%M:%S')
         annotatation = f'{ats}' if config.show_name else None
-        snap_picture(camera)
+        pl.snap_picture(camera)
         new = cv2.imread('frame.png')
 
         if new is not None and original is None:
@@ -471,8 +437,8 @@ def main():
 if __name__ == '__main__':
     try:
         main()
-        if time_to_die:
+        if pl.it_is_time_to_die():
             logging.info('Exiting: Graceful shutdown')
     except Exception as e:
         logging.exception(f'Unhandled Exception: {e}')
-        die(1)
+        pl.die(1)
