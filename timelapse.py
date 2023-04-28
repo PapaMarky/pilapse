@@ -6,6 +6,8 @@ import signal
 from datetime import datetime, timedelta
 from picamera import PiCamera
 
+from config import Config
+
 import cv2
 import logging
 import os
@@ -27,79 +29,13 @@ YELLOW = BGR(255, 255, 0)
 ORANGE = BGR(255,165,0)
 WHITE = BGR(255, 255, 255)
 
+
 logging.basicConfig(filename='timelapse.log',
 #                    encoding='utf-8', # doesn't work in py 3.7
                     level=logging.INFO,
                     format='%(asctime)s|%(levelname)s|%(message)s'
                     )
 
-class Config():
-
-    def __init__(self):
-        self._version = '1.0'
-
-    def get_defaults(self):
-        parser = self.create_parser()
-        config = self.load_from_list()
-        return config
-
-    def dump_to_log(self, config):
-        logging.info('-- START CONFIG DUMP --')
-        if config is None:
-            logging.error(' - Bad Config')
-        else:
-            for attr, value in config.__dict__.items():
-                logging.info(f'{attr:>15}: {value}')
-        logging.info('-- END CONFIG DUMP --')
-
-    def dump_to_json(self, filename='timelapse-config.json', indent=0):
-        logging.info(f'Saving config to {filename}..')
-        parser = self.create_parser()
-
-        if 'save-config' in self.__dict__:
-            self.__dict__.pop('save-config')
-        with open(filename, 'w') as json_file:
-            json_file.write(json.dumps(self.__dict__, indent=indent))
-        self.__dict__['_parser'] = parser
-
-    def clean_for_export(self, config:argparse.Namespace):
-        pass
-
-    def load_from_json(self, filename):
-        try:
-            with open(filename) as json_file:
-                new_config = json.load(json_file)
-
-                # validate the newly loaded config
-                temp = TimelapseConfig()
-                default_config = temp.load_from_list(arglist=[])
-
-                logging.info(f'DEF CONFIG: {default_config}')
-                logging.info(f'NEW CONFIG: {new_config}')
-
-                for key, value in temp.__dict__.items():
-                    if not key in new_config:
-                        raise Exception(f'Parameter Not Found in config: {key}')
-                    logging.info(f'{key:15}: {value}')
-                    #mstring = "MATCH" if value == new_config[key] else "NOT MATCHING"
-                    logging.info(f'{"":15}  {str(new_config[key]):20}')
-                    logging.info(f'--------------')
-        except Exception as e:
-            logging.exception(f'Exception loading {filename}')
-            raise e
-
-    def load_from_list(self, arglist=None):
-        parser = self.create_parser()
-        namespace = argparse.Namespace()
-        config = parser.parse_args(args=arglist, namespace=namespace)
-        config.version = self._version
-        return config
-
-    def create_parser(self):
-        raise Exception('Not implemented in base class')
-
-    def get_config(self):
-        return(self.config)
 
 class TimelapseConfig(Config):
     def __init__(self):
@@ -131,8 +67,7 @@ class TimelapseConfig(Config):
         timelapse.add_argument('--framerate', type=int, default=None,
                                help='When "all-frames" is set, "framerate" limits how often a new frame is taken. '
                                     'Int value. Units is seconds. EX. Setting framerate to "3" will take a frame every'
-                                    '3 seconds. Defaults to 0 which means "as fast as you can" '
-                                    'Setting framerate and all-frames imply "nomotion"')
+                                    '3 seconds. Defaults to 0 which means "as fast as you can" ')
         # Internal variable that gives us a place to store the framerate as a timedelta
         timelapse.add_argument('--framerate-delta', type=timedelta, default=None, help= argparse.SUPPRESS)
 
@@ -155,12 +90,20 @@ class TimelapseConfig(Config):
         return parser
 
     def load_from_list(self, arglist=None):
+        logging.info('loading config from list:')
+        logging.info(arglist)
         config = super().load_from_list(arglist=arglist)
         self.dump_to_log(config)
 
         if config.save_config:
-            self.dump_to_json(indent=2)
-            sys.exit(1)
+            config_file = 'timelapse-config.json'
+            logging.info(f'Saving config to {config_file}')
+            config.save_config = False
+            with open(config_file, 'w') as json_file:
+                logging.info(f'Dict Type: {type(config.__dict__)}')
+                logging.info(f'Dict: {config.__dict__}')
+                json_file.write(json.dumps(config.__dict__, indent=2))
+            die()
 
         if config.loglevel is not None:
             oldlevel = logging.getLevelName(logging.getLogger().getEffectiveLevel())
@@ -179,6 +122,7 @@ class TimelapseConfig(Config):
                 return None
         return config
 
+
 def process_config(myconfig):
 
     if '%' in myconfig.outdir:
@@ -191,7 +135,7 @@ def process_config(myconfig):
         myconfig.stop_at = datetime.now().replace(hour=int(hour), minute=int(minute), second=int(second), microsecond=0)
 
     if myconfig.run_from is not None:
-        logging.debug(f'Setting run-until: {myconfig.run_from}')
+        logging.debug(f'Setting run_from: {myconfig.run_from}')
         myconfig.__dict__['run_from_t'] = datetime.strptime(myconfig.run_from, '%H:%M:%S').time()
 
     if myconfig.run_until is not None:
@@ -200,7 +144,6 @@ def process_config(myconfig):
 
     if myconfig.framerate is not None:
         myconfig.framerate_delta = timedelta(seconds=myconfig.framerate)
-        myconfig.nomotion = True
 
     if myconfig.label_rgb is not None:
         (R,G,B) = myconfig.label_rgb.split(',')
@@ -234,11 +177,16 @@ def annotate_frame(image, annotaton, config):
             pos = (text_height, int(config.height - 1.5 * text_height))
             cv2.putText(image, t, pos, font, scale, color=color)
 def snap_picture(camera, output='frame.png'):
+    logging.debug(f'snap_picture({output})')
     (w, h) = camera.resolution
     # output = np.empty((w, h, 3), dtype=np.uint8)
     camera.capture(output)
     # camera.capture(output, 'rgb')
     # return output
+
+def die(status=0):
+    logging.info(f'Time to die')
+    sys.exit(status)
 
 def exit_gracefully(signum, frame):
     global time_to_die
@@ -260,7 +208,7 @@ def main():
     timelapse_config.dump_to_log(config)
     config = process_config(config)
     if config is None:
-        sys.exit(1)
+        die(1)
 
     logging.debug(f'CMD: {" ".join(sys.argv)}')
     timelapse_config.dump_to_log(config)
@@ -269,13 +217,15 @@ def main():
     setup_camera(camera, config)
 
     nframes = 0
-    keepers = 0
     start_time = datetime.now()
     logging.info(f'Starting Timelapse ({start_time.strftime("%Y/%m/%d %H:%M:%S")})')
     nextframe_time = None
-    paused = False if config.run_from is None else True
+    paused = False
+    report_wait = timedelta(seconds=10)
+    report_time = start_time + report_wait
     while not time_to_die:
         now = datetime.now()
+        logging.debug(f'-loop {now}: paused: {paused}, run_until; {config.run_until}')
         if config.run_until is not None and not paused:
             if now.time() >= config.run_until_t:
                 logging.info(f'Pausing because run_until: {config.run_until}')
@@ -287,33 +237,39 @@ def main():
                 paused = False
 
         if paused:
-            time.sleep(1)
+            pause_seconds = 1
+            logging.debug(f'pausing {pause_seconds} second...')
+            time.sleep(pause_seconds)
 
         if config.framerate:
             nextframe_time = now + config.framerate_delta
+            logging.debug(f'nextframe_time: {nextframe_time}')
 
         if config.nframes and nframes > config.nframes:
             logging.info(f'Reached limit ({config.nframes} frames). Stopping.')
             break
-        if nframes > 0 and nframes % 100 == 0:
+        if now > report_time:
             elapsed = now - start_time
             FPS = nframes / elapsed.total_seconds()
             with open('/sys/class/thermal/thermal_zone0/temp') as f:
                 temp = int(f.read().strip()) / 1000
-            logging.info(f'Elapsed: {elapsed}, {nframes} frames. {keepers} saved. FPS = {FPS:5.2f} CPU Temp {temp}c')
+            logging.info(f'Elapsed: {elapsed}, {nframes} frames. FPS = {FPS:5.2f} CPU Temp {temp}c')
+            report_time = report_time + report_wait
         nframes += 1
         if config.stop_at and now > config.stop_at:
             logging.info(f'Shutting down due to "stop_at": {config.stop_at.strftime("%Y/%m/%d %H:%M:%S")}')
-            sys.exit()
+            die()
         ts = now.strftime('%Y%m%d_%H%M%S.%f')
         fname_base = f'{config.prefix}_{ts}'
         new_name = f'{fname_base}.png'
         ats = now.strftime('%Y/%m/%d %H:%M:%S')
         annotatation = f'{ats}' if config.show_name else None
         new_path = os.path.join(config.outdir, new_name)
+        logging.debug(f'About to snap')
         snap_picture(camera, new_path)
 
         if nframes == 1 and config.testframe:
+            logging.debug(f'Creating Test Frame')
             copy = cv2.imread(new_path)
             w = config.width
             h = config.height
@@ -341,4 +297,4 @@ if __name__ == '__main__':
             logging.info('Exiting: Graceful shutdown')
     except Exception as e:
         logging.exception(f'Unhandled Exception: {e}')
-        sys.exit(1)
+        die(1)

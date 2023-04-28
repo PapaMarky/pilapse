@@ -6,6 +6,8 @@ import signal
 from datetime import datetime, timedelta
 from picamera import PiCamera
 
+from config import Config
+
 import cv2
 import imutils
 import logging
@@ -28,79 +30,16 @@ YELLOW = BGR(255, 255, 0)
 ORANGE = BGR(255,165,0)
 WHITE = BGR(255, 255, 255)
 
-logging.basicConfig(filename='pilapse.log',
+logging.basicConfig(filename='motion.log',
 #                    encoding='utf-8', # doesn't work in py 3.7
                     level=logging.INFO,
                     format='%(asctime)s|%(levelname)s|%(message)s'
                     )
 
-class Config():
+def die(status=0):
+    logging.info(f'Time to die')
+    sys.exit(status)
 
-    def __init__(self):
-        self._version = '1.0'
-
-    def get_defaults(self):
-        parser = self.create_parser()
-        config = self.load_from_list()
-        return config
-
-    def dump_to_log(self, config):
-        logging.info('-- START CONFIG DUMP --')
-        if config is None:
-            logging.error(' - Bad Config')
-        else:
-            for attr, value in config.__dict__.items():
-                logging.info(f'{attr:>15}: {value}')
-        logging.info('-- END CONFIG DUMP --')
-
-    def dump_to_json(self, filename='motion-config.json', indent=0):
-        logging.info(f'Saving config to {filename}..')
-        parser = self.create_parser()
-
-        if 'save-config' in self.__dict__:
-            self.__dict__.pop('save-config')
-        with open(filename, 'w') as json_file:
-            json_file.write(json.dumps(self.__dict__, indent=indent))
-        self.__dict__['_parser'] = parser
-
-    def clean_for_export(self, config:argparse.Namespace):
-        pass
-
-    def load_from_json(self, filename):
-        try:
-            with open(filename) as json_file:
-                new_config = json.load(json_file)
-
-                # validate the newly loaded config
-                temp = MotionConfig()
-                default_config = temp.load_from_list(arglist=[])
-
-                logging.info(f'DEF CONFIG: {default_config}')
-                logging.info(f'NEW CONFIG: {new_config}')
-
-                for key, value in temp.__dict__.items():
-                    if not key in new_config:
-                        raise Exception(f'Parameter Not Found in config: {key}')
-                    logging.info(f'{key:15}: {value}')
-                    #mstring = "MATCH" if value == new_config[key] else "NOT MATCHING"
-                    logging.info(f'{"":15}  {str(new_config[key]):20}')
-                    logging.info(f'--------------')
-        except Exception as e:
-            logging.exception(f'Exception loading {filename}')
-            raise e
-
-    def load_from_list(self, arglist=None):
-        parser = self.create_parser()
-        namespace = argparse.Namespace()
-        config = parser.parse_args(args=arglist, namespace=namespace)
-        config.version = self._version
-        return config
-
-    def create_parser(self):
-        raise Exception('Not implemented in base class')
-
-    def get_config(self):
-        return(self.config)
 
 class MotionConfig(Config):
     def __init__(self):
@@ -178,12 +117,20 @@ class MotionConfig(Config):
         return parser
 
     def load_from_list(self, arglist=None):
+        logging.info('loading config from list:')
+        logging.info(arglist)
         config = super().load_from_list(arglist=arglist)
         self.dump_to_log(config)
 
         if config.save_config:
-            self.dump_to_json(indent=2)
-            sys.exit(1)
+            config_file = 'motion-config.json'
+            logging.info(f'Saving config to {config_file}')
+            config.save_config = False
+            with open(config_file, 'w') as json_file:
+                logging.info(f'Dict Type: {type(config.__dict__)}')
+                logging.info(f'Dict: {config.__dict__}')
+                json_file.write(json.dumps(config.__dict__, indent=2))
+            die()
 
         if config.loglevel is not None:
             oldlevel = logging.getLevelName(logging.getLogger().getEffectiveLevel())
@@ -425,7 +372,7 @@ def main():
     pilapse_config.dump_to_log(config)
     config = process_config(config)
     if config is None:
-        sys.exit(1)
+        die(1)
 
     logging.debug(f'CMD: {" ".join(sys.argv)}')
     pilapse_config.dump_to_log(config)
@@ -469,7 +416,7 @@ def main():
         nframes += 1
         if config.stop_at and now > config.stop_at:
             logging.info(f'Shutting down due to "stop_at": {config.stop_at.strftime("%Y/%m/%d %H:%M:%S")}')
-            sys.exit()
+            die()
         ts = now.strftime('%Y%m%d_%H%M%S.%f')
         fname_base = f'{config.prefix}_{ts}'
         new_name = f'{fname_base}_90.png' if config.save_diffs else f'{fname_base}.png'
@@ -528,4 +475,4 @@ if __name__ == '__main__':
             logging.info('Exiting: Graceful shutdown')
     except Exception as e:
         logging.exception(f'Unhandled Exception: {e}')
-        sys.exit(1)
+        die(1)

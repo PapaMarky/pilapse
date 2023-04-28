@@ -34,114 +34,6 @@ logging.basicConfig(filename='pilapse.log',
                     format='%(asctime)s|%(levelname)s|%(message)s'
                     )
 
-class Config():
-
-    def __init__(self):
-        self._version = '1.0'
-
-    def get_defaults(self):
-        parser = self.create_parser()
-        config = self.load_from_list()
-        return config
-
-    def dump_to_log(self, config):
-        logging.info('-- START CONFIG DUMP --')
-        if config is None:
-            logging.error(' - Bad Config')
-        else:
-            for attr, value in config.__dict__.items():
-                logging.info(f'{attr:>15}: {value}')
-        logging.info('-- END CONFIG DUMP --')
-
-    def dump_to_json(self, filename='pilapse-config.json', indent=0):
-        logging.info(f'Saving config to {filename}..')
-        parser = self.create_parser()
-
-        if 'save-config' in self.__dict__:
-            self.__dict__.pop('save-config')
-        with open(filename, 'w') as json_file:
-            json_file.write(json.dumps(self.__dict__, indent=indent))
-        self.__dict__['_parser'] = parser
-
-    def clean_for_export(self, config:argparse.Namespace):
-        pass
-
-    def load_from_json(self, filename):
-        try:
-            with open(filename) as json_file:
-                new_config = json.load(json_file)
-
-                # validate the newly loaded config
-                temp = PilapseConfig()
-                default_config = temp.load_from_list(arglist=[])
-
-                logging.info(f'DEF CONFIG: {default_config}')
-                logging.info(f'NEW CONFIG: {new_config}')
-
-                for key, value in temp.__dict__.items():
-                    if not key in new_config:
-                        raise Exception(f'Parameter Not Found in config: {key}')
-                    logging.info(f'{key:15}: {value}')
-                    #mstring = "MATCH" if value == new_config[key] else "NOT MATCHING"
-                    logging.info(f'{"":15}  {str(new_config[key]):20}')
-                    logging.info(f'--------------')
-        except Exception as e:
-            logging.exception(f'Exception loading {filename}')
-            raise e
-
-    def load_from_list(self, arglist=None):
-        parser = self.create_parser()
-        namespace = argparse.Namespace()
-        config = parser.parse_args(args=arglist, namespace=namespace)
-        config.version = self._version
-        return config
-
-    def create_parser(self):
-        raise Exception('Not implemented in base class')
-
-    def process_for_import(self, myconfig):
-        logging.debug(f'CMD: {" ".join(sys.argv)}')
-        logging.debug(f'MYCONFIG: {myconfig}')
-        for attr, value in myconfig.__dict__.items():
-            logging.debug(f'{attr:10}: {value}')
-
-        myconfig.bottom = int(myconfig.bottom * myconfig.height)
-        myconfig.top = int(myconfig.top * myconfig.height)
-        myconfig.left = int(myconfig.left * myconfig.width)
-        myconfig.right = int(myconfig.right * myconfig.width)
-
-        if myconfig.shrinkto is not None:
-            logging.debug('shrinkto is set')
-            if myconfig.shrinkto <= 1.0:
-                logging.debug('shrink to is float')
-                myconfig.shrinkto = myconfig.height * myconfig.shrinkto
-            myconfig.shrinkto = int(myconfig.shrinkto)
-
-        if '%' in myconfig.outdir:
-            myconfig.outdir = datetime.strftime(datetime.now(), myconfig.outdir)
-        os.makedirs(myconfig.outdir, exist_ok=True)
-
-        if myconfig.stop_at is not None:
-            logging.debug(f'Setting stop-at: {myconfig.stop_at}')
-            (hour, minute, second) = myconfig.stop_at.split(':')
-            myconfig.stop_at = datetime.now().replace(hour=int(hour), minute=int(minute), second=int(second), microsecond=0)
-
-        if myconfig.framerate is not None:
-            if not myconfig.all_frames:
-                logging.warning(f'framerate set to {myconfig.framerate}, but all-frames not set. Ignoring framerate.')
-                myconfig.framerate = 0
-            else:
-                myconfig.framerate_delta = timedelta(seconds=myconfig.framerate)
-                myconfig.nomotion = True
-
-        if myconfig.label_rgb is not None:
-            (R,G,B) = myconfig.label_rgb.split(',')
-            myconfig.label_rgb = BGR(int(R), int(G), int(B))
-
-        return myconfig
-
-    def get_config(self):
-        return(self.config)
 
 class PilapseConfig(Config):
     def __init__(self):
@@ -234,7 +126,7 @@ class PilapseConfig(Config):
 
         if config.save_config:
             self.dump_to_json(indent=2)
-            sys.exit(1)
+            die(1)
 
         if config.loglevel is not None:
             oldlevel = logging.getLevelName(logging.getLogger().getEffectiveLevel())
@@ -484,7 +376,7 @@ def main():
     pilapse_config.dump_to_log(config)
     config = process_config(config)
     if config is None:
-        sys.exit(1)
+        die(1)
 
     logging.debug(f'CMD: {" ".join(sys.argv)}')
     pilapse_config.dump_to_log(config)
@@ -501,7 +393,8 @@ def main():
     start_time = datetime.now()
     logging.info(f'Starting Timelapse ({start_time.strftime("%Y/%m/%d %H:%M:%S")})')
     nextframe_time = None
-    paused = False if config.run_from is None else True
+    paused = False
+    logging.info(f'paused: {paused}')
     while not time_to_die:
         now = datetime.now()
         if config.run_until is not None and not paused:
@@ -516,6 +409,7 @@ def main():
 
         if paused:
             time.sleep(1)
+            continue
 
         if config.framerate:
             nextframe_time = now + config.framerate_delta
@@ -532,7 +426,7 @@ def main():
         nframes += 1
         if config.stop_at and now > config.stop_at:
             logging.info(f'Shutting down due to "stop_at": {config.stop_at.strftime("%Y/%m/%d %H:%M:%S")}')
-            sys.exit()
+            die()
         ts = now.strftime('%Y%m%d_%H%M%S.%f')
         fname_base = f'{config.prefix}_{ts}'
         new_name = f'{fname_base}_90.png' if config.save_diffs else f'{fname_base}.png'
@@ -603,4 +497,4 @@ if __name__ == '__main__':
             logging.info('Exiting: Graceful shutdown')
     except Exception as e:
         logging.exception(f'Unhandled Exception: {e}')
-        sys.exit(1)
+        die(1)
