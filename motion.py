@@ -2,9 +2,8 @@
 
 import argparse
 import json
-import signal
 from datetime import datetime, timedelta
-from picamera import PiCamera
+from camera import Camera
 
 from config import Config
 import pilapse as pl
@@ -105,7 +104,7 @@ class MotionConfig(Config):
         return parser
 
     def load_from_list(self, arglist=None):
-        logging.info('loading config from list:')
+        logging.info('loading MOTION config from list:')
         logging.info(arglist)
         config = super().load_from_list(arglist=arglist)
         self.dump_to_log(config)
@@ -313,38 +312,24 @@ def compare_images(original, new, config, fname_base):
 
     return copy, motion_detected
 
-def annotate_frame(image, annotaton, config):
-    if annotaton:
-        pl.annotate_frame(image, annotaton, config)
-
-        cv2.putText(image, annotaton, pos, font, scale, color=color)
-        if config.debug:
-            text_height = 10
-            pos = (text_height, 2 * text_height)
-            font = cv2.FONT_HERSHEY_SIMPLEX
-            size, baseline = cv2.getTextSize(annotaton, font, 1, 3)
-            scale = text_height / size[1]
-            color = config.label_rgb if config.label_rgb is not None else ORANGE
-            t = f'({config.width:4} x {config.height:4})  ({config.top:4}, {config.left}) - ({config.bottom:4}, {config.right}), mindiff: {config.mindiff} shrinkto: {config.shrinkto}'
-            pos = (text_height, int(config.height - 1.5 * text_height))
-            cv2.putText(image, t, pos, font, scale, color=color)
-
 def main():
     pl.create_pid_file()
 
-    pilapse_config = MotionConfig()
-    config = pilapse_config.load_from_list()
+    motion_config = MotionConfig()
 
-    pilapse_config.dump_to_log(config)
+    logging.info(f'Loading command line parameters')
+    config = motion_config.load_from_list()
+    motion_config.dump_to_log(config)
+
+
     config = process_config(config)
     if config is None:
         pl.die(1)
 
     logging.debug(f'CMD: {" ".join(sys.argv)}')
-    pilapse_config.dump_to_log(config)
+    motion_config.dump_to_log(config)
 
-    camera = PiCamera()
-    pl.setup_camera(camera, config)
+    camera = Camera(config)
     original = None
     orig_name = ''
     new = None
@@ -389,8 +374,8 @@ def main():
         new_name_motion = f'{fname_base}_90M.png'
         ats = now.strftime('%Y/%m/%d %H:%M:%S')
         annotatation = f'{ats}' if config.show_name else None
-        pl.snap_picture(camera)
-        new = cv2.imread('frame.png')
+        img_file_name = 'frame.png'
+        new = camera.capture()
 
         if new is not None and original is None:
             if config.testframe:
@@ -409,7 +394,7 @@ def main():
                 cv2.rectangle(copy, (100, 100), (100 + config.mindiff, 100 + config.mindiff), WHITE)
 
                 logging.info(f'TEST IMAGE: {new_name_motion}, top: {config.top}, bottom: {config.bottom}, left: {config.left}')
-                annotate_frame(copy, annotatation, config)
+                pl.annotate_frame(copy, annotatation, config)
                 cv2.imwrite(os.path.join(config.outdir, new_name_motion), copy)
 
         elif original is not None and new is not None:
@@ -425,11 +410,11 @@ def main():
             elif copy is not None:
                 logging.debug(f'{new_name}')
                 keepers += 1
-                annotate_frame(copy, annotatation, config)
+                pl.annotate_frame(copy, annotatation, config)
                 cv2.imwrite(os.path.join(config.outdir, new_name), copy)
             elif config.all_frames:
                 logging.debug(f'{new_name}')
-                annotate_frame(new, annotatation, config)
+                pl.annotate_frame(new, annotatation, config)
                 cv2.imwrite(os.path.join(config.outdir, new_name), new)
         original = new
         orig_name = new_name

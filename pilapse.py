@@ -1,29 +1,28 @@
 #! /usr/bin/env python3
 
 import argparse
-import json
 import signal
 from datetime import datetime, timedelta
-from picamera import PiCamera
 from config import Config
 
 import cv2
-import imutils
 import logging
 import os
 import sys
 import time
-import pause
 
 time_to_die = False
 def it_is_time_to_die():
+    logging.debug(f'Is it time_to_die?: {time_to_die}')
     return time_to_die
 
 def set_time_to_die():
+    global time_to_die
+    logging.debug('Setting "time_to_die"')
     time_to_die = True
 
 def exit_gracefully(signum, frame):
-    logging.info(f'SHUTTING DOWN due to {signal.Signals(signum).name}')
+    logging.info(f'SHUTTING {get_program_name()} DOWN due to {signal.Signals(signum).name}')
     set_time_to_die()
 
 signal.signal(signal.SIGINT, exit_gracefully)
@@ -58,22 +57,27 @@ def create_pid_file():
         return False
     with open(get_pid_file(), 'w') as pidout:
         pid = os.getpid()
-        print(f'saving PID in {pidfile}')
+        logging.info(f'saving PID ({pid}) in {pidfile}')
         pidout.write(f'{pid}')
+    return True
 
 def delete_pid_file():
     pidfile = get_pid_file()
+    logging.info(f'Deleting PID file: {pidfile}')
     if os.path.exists(pidfile):
+        logging.debug(f' - found {pidfile}')
         with open(pidfile) as f:
-            pid = f.read()
+            pid = int(f.read())
             if os.getpid() != pid:
                 logging.warning(f'PID file exists but contains "{pid}" (my pid is {os.getpid()})')
                 return
+        logging.debug(f' - deleting {pidfile}')
         os.remove(pidfile)
 
 def die(status=0):
     logging.info(f'Time to die')
     delete_pid_file()
+    time.sleep(0.1)
     sys.exit(status)
 
 logging.basicConfig(filename=f'{get_program_name()}.log',
@@ -268,12 +272,4 @@ def snap_picture(camera, output='frame.png'):
     camera.capture(output)
     # camera.capture(output, 'rgb')
     # return output
-
-def exit_gracefully(signum, frame):
-    global time_to_die
-    logging.info(f'SHUTTING DOWN due to {signal.Signals(signum).name}')
-    time_to_die = True
-
-signal.signal(signal.SIGINT, exit_gracefully)
-signal.signal(signal.SIGTERM, exit_gracefully)
 
