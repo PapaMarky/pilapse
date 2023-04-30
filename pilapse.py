@@ -83,7 +83,7 @@ def die(status=0):
 logging.basicConfig(filename=f'{get_program_name()}.log',
 #                    encoding='utf-8', # doesn't work in py 3.7
                     level=logging.INFO,
-                    format='%(asctime)s|%(levelname)s|%(message)s'
+                    format='%(asctime)s|%(levelname)s|%(threadName)s|%(message)s'
                     )
 
 

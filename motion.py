@@ -2,12 +2,14 @@
 
 import argparse
 import json
+import threading
 from datetime import datetime, timedelta
 from camera import Camera
 
 from config import Config
 import pilapse as pl
-
+from queue import Queue
+from threads import DirectoryProducer, CameraProducer, MotionConsumer
 
 import cv2
 import imutils
@@ -74,6 +76,9 @@ class MotionConfig(Config):
         frame.add_argument('--label-rgb', type=str,
                            help='Set the color of the timestamp on each frame. '
                                 'FORMAT: comma separated integers between 0 and 255, no spaces EX: "R,G,B" ')
+        frame.add_argument('--source-dir', type=str,
+                           help='If source-dir is set, image files will be loaded from a directory instead of '
+                                'the camera')
 
         timing = parser.add_argument_group('Timing', 'Control when capture starts / stops')
         timing.add_argument('--stop-at', type=str,
@@ -136,41 +141,6 @@ class MotionConfig(Config):
                 return None
         return config
 
-def process_config(myconfig):
-    myconfig.bottom = int(myconfig.bottom * myconfig.height)
-    myconfig.top = int(myconfig.top * myconfig.height)
-    myconfig.left = int(myconfig.left * myconfig.width)
-    myconfig.right = int(myconfig.right * myconfig.width)
-
-    if myconfig.shrinkto is not None:
-        logging.debug('shrinkto is set')
-        if myconfig.shrinkto <= 1.0:
-            logging.debug('shrink to is float')
-            myconfig.shrinkto = myconfig.height * myconfig.shrinkto
-        myconfig.shrinkto = int(myconfig.shrinkto)
-
-    if '%' in myconfig.outdir:
-        myconfig.outdir = datetime.strftime(datetime.now(), myconfig.outdir)
-    os.makedirs(myconfig.outdir, exist_ok=True)
-
-    if myconfig.stop_at is not None:
-        logging.debug(f'Setting stop-at: {myconfig.stop_at}')
-        (hour, minute, second) = myconfig.stop_at.split(':')
-        myconfig.stop_at = datetime.now().replace(hour=int(hour), minute=int(minute), second=int(second), microsecond=0)
-
-    if myconfig.run_from is not None:
-        logging.debug(f'Setting run-until: {myconfig.run_from}')
-        myconfig.__dict__['run_from_t'] = datetime.strptime(myconfig.run_from, '%H:%M:%S').time()
-
-    if myconfig.run_until is not None:
-        logging.debug(f'Setting run-until: {myconfig.run_until}')
-        myconfig.__dict__['run_until_t'] = datetime.strptime(myconfig.run_until, '%H:%M:%S').time()
-
-    if myconfig.label_rgb is not None:
-        (R,G,B) = myconfig.label_rgb.split(',')
-        myconfig.label_rgb = BGR(int(R), int(G), int(B))
-
-    return myconfig
 
 
 # based on this:
@@ -312,7 +282,133 @@ def compare_images(original, new, config, fname_base):
 
     return copy, motion_detected
 
+class MotionDetectionApp():
+    def __init__(self):
+        self._config_loader = MotionConfig()
+        self._config = self._config_loader.load_from_list()
+
+        if self._config is None:
+            raise Exception('Bad config')
+
+        # placeholders for all the valid parameters
+        self.mindiff = self._config.mindiff
+        self.top = self._config.top
+        self.bottom = self._config.bottom
+        self.left = self._config.left
+        self.right = self._config.right
+        self.shrinkto = self._config.shrinkto
+        self.threshold = self._config.threshold
+        self.dilation = self._config.dilation
+        self.all_frames = self._config.all_frames
+        self.width = self._config.width
+        self.height = self._config.height
+        self.outdir = self._config.outdir
+        self.prefix = self._config.prefix
+        self.show_name = self._config.show_name
+        self.label_rgb = self._config.label_rgb
+        self.source_dir = self._config.source_dir
+        self.stop_at = self._config.stop_at
+        self.run_from = self._config.run_from
+        self.run_until = self._config.run_until
+        self.nframes = self._config.nframes
+        self.loglevel = self._config.loglevel
+        self.save_config = self._config.save_config
+        self.save_diffs = self._config.save_diffs
+        self.debug = self._config.debug
+        self.show_motion = self._config.show_motion
+        self.testframe = self._config.testframe
+
+        if not pl.it_is_time_to_die():
+            self.process_config()
+            self._queue = Queue()
+            self._shutdown_event = threading.Event()
+
+
+    def process_config(self):
+
+        for k, v in self._config.__dict__.items():
+            if k not in self.__dict__:
+                logging.warning(f'Config attribute missing: {k}, config: {v}')
+            self.__dict__[k] = v
+
+        self.bottom = int(self.bottom * self.height)
+        self.top = int(self.top * self.height)
+        self.left = int(self.left * self.width)
+        self.right = int(self.right * self.width)
+
+        if self.shrinkto is not None:
+            logging.debug('shrinkto is set')
+            if self.shrinkto <= 1.0:
+                self.shrinkto = self.height * self.shrinkto
+            self.shrinkto = int(self.shrinkto)
+
+        if '%' in self.outdir:
+            self.outdir = datetime.strftime(datetime.now(), self.outdir)
+        os.makedirs(self.outdir, exist_ok=True)
+
+        if self.stop_at is not None:
+            logging.debug(f'Setting stop-at: {self.stop_at}')
+            (hour, minute, second) = self.stop_at.split(':')
+            self.stop_at = datetime.now().replace(hour=int(hour), minute=int(minute), second=int(second), microsecond=0)
+
+        if self.run_from is not None:
+            logging.debug(f'Setting run-until: {self.run_from}')
+            self.__dict__['run_from_t'] = datetime.strptime(self.run_from, '%H:%M:%S').time()
+
+        if self.run_until is not None:
+            logging.debug(f'Setting run-until: {self.run_until}')
+            self.__dict__['run_until_t'] = datetime.strptime(self.run_until, '%H:%M:%S').time()
+
+        if self.label_rgb is not None:
+            (R,G,B) = self.label_rgb.split(',')
+            self.label_rgb = BGR(int(R), int(G), int(B))
+
+    def run(self):
+        if pl.it_is_time_to_die():
+            return
+        ###
+        # Create a Motion Consumer and Image Producer. Start them up.
+
+        producer = None
+        if self.source_dir:
+            # load images from directory
+            producer = DirectoryProducer(self.source_dir, 'png', self._queue, self._shutdown_event)
+        else:
+            # create images using camera
+            producer = CameraProducer(self.width, self.height, self._queue, self._shutdown_event)
+        consumer = MotionConsumer(self._config, self._queue, self._shutdown_event)
+
+        consumer.start()
+        producer.start()
+
+        while True:
+            logging.debug(f'waiting: producer alive? {producer.is_alive()}, consumer alive? {consumer.is_alive()}')
+            if pl.it_is_time_to_die():
+                logging.info('Shutting down')
+                self._shutdown_event.set()
+
+                logging.info('Waiting for producer...')
+                producer.join(5.0)
+                if producer.is_alive():
+                    logging.warning('- Timed out, producer is still alive.')
+
+                logging.info('Waiting for consumer...')
+                consumer.join(5.0)
+                if consumer.is_alive():
+                    logging.warning('- Timed out, consumer is still alive.')
+
+                break
+            time.sleep(1)
+        pl.die()
+
 def main():
+    if not pl.create_pid_file():
+        pl.die()
+    app = MotionDetectionApp()
+    if not pl.it_is_time_to_die():
+        app.run()
+
+def oldmain():
     pl.create_pid_file()
 
     motion_config = MotionConfig()
@@ -322,7 +418,7 @@ def main():
     motion_config.dump_to_log(config)
 
 
-    config = process_config(config)
+    #config = process_config(config)
     if config is None:
         pl.die(1)
 

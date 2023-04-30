@@ -5,11 +5,11 @@ from picamera.array import PiRGBArray
 from picamera import PiCamera
 
 class Camera():
-    def __init__(self, config):
-        self.config = config
+    def __init__(self, width, height):
+        #self.config = config
         self.camera = PiCamera()
         logging.info('Setting up camera...')
-        self.camera.resolution = (config.width, config.height)
+        self.camera.resolution = (width, height)
         self.camera.rotation = 180
         self.camera.framerate = 80
         self.camera.exposure_mode = 'auto'
