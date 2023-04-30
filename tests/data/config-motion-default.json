@@ -24,5 +24,6 @@
   "debug": false,
   "show_motion": false,
   "testframe": false,
-  "version": "1.0"
+  "version": "1.0",
+  "source_dir": null
 }
