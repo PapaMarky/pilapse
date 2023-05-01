@@ -244,14 +244,16 @@ def process_config(myconfig):
 
 def annotate_frame(image, annotaton, config):
     if annotaton:
-        text_height = 10
+        text_height = int(config.height / 40)
+        thickness = int(config.height * 1/480)
+        if thickness < 1:
+            thickness = 1
         pos = (text_height, 2 * text_height)
         font = cv2.FONT_HERSHEY_SIMPLEX
         size, baseline = cv2.getTextSize(annotaton, font, 1, 3)
         scale = text_height / size[1]
         color = config.label_rgb if config.label_rgb is not None else ORANGE
-
-        cv2.putText(image, annotaton, pos, font, scale, color=color)
+        cv2.putText(image, annotaton, pos, font, scale, thickness=thickness, color=color)
         return text_height
 
 def setup_camera(camera, config):
