@@ -375,7 +375,7 @@ class MotionDetectionApp():
             producer = DirectoryProducer(self.source_dir, 'png', self._queue, self._shutdown_event)
         else:
             # create images using camera
-            producer = CameraProducer(self.width, self.height, self._queue, self._shutdown_event)
+            producer = CameraProducer(self.width, self.height, self._config.prefix, self._queue, self._shutdown_event)
         consumer = MotionConsumer(self._config, self._queue, self._shutdown_event)
 
         consumer.start()
@@ -383,9 +383,14 @@ class MotionDetectionApp():
 
         while True:
             logging.debug(f'waiting: producer alive? {producer.is_alive()}, consumer alive? {consumer.is_alive()}')
+            if not consumer.is_alive() or not producer.is_alive():
+                self._shutdown_event.set()
+                pl.set_time_to_die()
+
             if pl.it_is_time_to_die():
                 logging.info('Shutting down')
                 self._shutdown_event.set()
+                break
 
                 logging.info('Waiting for producer...')
                 producer.join(5.0)
@@ -398,6 +403,10 @@ class MotionDetectionApp():
                     logging.warning('- Timed out, consumer is still alive.')
 
                 break
+            now = datetime.now()
+            if self.stop_at and now > self.stop_at:
+                logging.info(f'Shutting down due to "stop_at": {self.stop_at.strftime("%Y/%m/%d %H:%M:%S")}')
+                pl.die()
             time.sleep(1)
         pl.die()
 
@@ -407,6 +416,7 @@ def main():
     app = MotionDetectionApp()
     if not pl.it_is_time_to_die():
         app.run()
+
 
 def oldmain():
     pl.create_pid_file()
