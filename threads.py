@@ -108,6 +108,9 @@ class ImageProducer(threading.Thread):
         self.queue:Queue = work_queue
         self.shutdown_event:threading.Event = shutdown_event
 
+    def preproduce(self):
+        pass
+
     def run(self) -> None:
         shutdown_event = self.shutdown_event
         logging.info(f'running ImageProducer ({self.shutdown_event})')
@@ -115,10 +118,10 @@ class ImageProducer(threading.Thread):
             if shutdown_event.is_set():
                 logging.info('Shutdown event received')
                 break
-
-            image = self.produce_image()
-            if image is not None:
-                self.queue.put(image)
+            if self.preproduce():
+                image = self.produce_image()
+                if image is not None:
+                    self.queue.put(image)
 
     def produce_image(self) -> str:
         raise Exception('Base clase does not implement produce_image()')
@@ -193,15 +196,74 @@ class CameraProducer(ImageProducer):
     #    - stop_at
     #    - nframes
     # or move that control into app?
-    def __init__(self, width, height, prefix, work_queue, shutdown_event):
+    def __init__(self, width, height, prefix, config, work_queue, shutdown_event):
         super().__init__(work_queue, shutdown_event)
         self.setName('CameraProducer')
         self.width = width
         self.height = height
         self.prefix = prefix
+        self.config = copy(config)
         self.camera = Camera(width, height)
-        time.sleep(2)
 
+        self.paused = False if self.config.run_from is None else True
+
+        if self.config.stop_at is not None:
+            logging.debug(f'Setting stop-at: {self.config.stop_at}')
+            (hour, minute, second) = self.config.stop_at.split(':')
+            self.config.stop_at = datetime.now().replace(hour=int(hour), minute=int(minute), second=int(second), microsecond=0)
+
+        if self.config.run_from is not None:
+            logging.debug(f'Setting run-until: {self.config.run_from}')
+            self.config.run_from_t = datetime.strptime(self.config.run_from, '%H:%M:%S').time()
+
+        if self.config.run_until is not None:
+            logging.debug(f'Setting run-until: {self.config.run_until}')
+            self.config.run_until_t = datetime.strptime(self.config.run_until, '%H:%M:%S').time()
+        self.now = datetime.now()
+
+        time.sleep(2) # this is really so the camera can warm up
+
+
+    def check_run_until(self):
+        # Manage run_from and run_until
+        current_time = self.now.time()
+        if self.config.run_until is not None and not self.paused:
+            logging.info(f'Run from {self.config.run_from} until {self.config.run_until}')
+
+            if current_time >= self.config.run_until_t or current_time <= self.config.run_from_t:
+                logging.info(f'Pausing because outside run time: from {self.config.run_from} until {self.config.run_until}')
+                self.paused = True
+
+        if self.paused:
+            logging.debug(f'Paused, check the time. now: {self.now.time()}, run from: {self.config.run_from}')
+            if current_time >= self.config.run_from_t and current_time <= self.config.run_until_t:
+                logging.info(f'Ending pause because inside run time: from {self.config.run_from} until {self.config.run_until}')
+                self.paused = False
+
+        if self.paused:
+            time.sleep(1)
+            return False
+        return True
+
+    def check_stop_at(self):
+        if self.config.stop_at and self.now > self.config.stop_at:
+            logging.info(f'Shutting down due to "stop_at": {self.config.stop_at.strftime("%Y/%m/%d %H:%M:%S")}')
+            self.shutdown_event.set()
+            return False
+        return True
+
+    def preproduce(self):
+        self.now = datetime.now()
+        if not self.check_run_until():
+            logging.info(f'Run Until Check Failed')
+            return False
+
+        if not self.check_stop_at():
+            logging.info(f'Stop At Check Failed. Shutting down')
+            self.shutdown_event.set()
+            return False
+
+        return True
     def produce_image(self) -> str:
         if not self.shutdown_event.is_set():
             img = CameraImage(self.camera.capture(), prefix=self.prefix, type='png')
@@ -218,6 +280,7 @@ class ImageConsumer(threading.Thread):
         self.keepers = 0
         self.start_time = datetime.now()
         self.now = self.start_time
+        self.paused = False
 
         self.report_wait = timedelta(seconds=30)
         self.report_time = self.start_time + self.report_wait
@@ -250,20 +313,21 @@ class ImageConsumer(threading.Thread):
         self.start_time = datetime.now()
         logging.info(f'Starting Motion Capture ({self.start_time.strftime("%Y/%m/%d %H:%M:%S")})')
         self.paused = False if self.config.run_from is None else True
+        force_consume = False
         while True:
             # Have we received shutdown event?
             if self._shutdown_event.is_set():
                 logging.warning(f'shutdown event is set')
-                n = self._queue.qsize()
-                if self._queue.empty() or self.nframes >= self.config.nframes:
+                if self._queue.empty() or (self.config.nframes is not None and self.nframes >= self.config.nframes):
                     logging.info('Queue is empty. Shutting down')
                     break
                 logging.warning(f'Trying to shutdown, but queue not empty')
+                force_consume = True
 
             self.now = datetime.now()
             self.log_status()
             if not self._queue.empty():
-                if self.preconsume():
+                if self.preconsume() or force_consume:
                     image = self._queue.get()
                     self.consume_image(image)
                 else:
@@ -297,25 +361,26 @@ class MotionConsumer(ImageConsumer):
 
         if self.config.run_until is not None:
             logging.debug(f'Setting run-until: {self.config.run_until}')
-            self.run_until_t = datetime.strptime(self.config.run_until, '%H:%M:%S').time()
+            self.config.run_until_t = datetime.strptime(self.config.run_until, '%H:%M:%S').time()
 
         if self.config.label_rgb is not None:
             (R,G,B) = self.config.label_rgb.split(',')
             self.config.label_rgb = BGR(int(R), int(G), int(B))
 
-
     def check_run_until(self):
-
         # Manage run_from and run_until
+        current_time = self.now.time()
         if self.config.run_until is not None and not self.paused:
-            if self.now.time() >= self.config.run_until_t:
-                logging.info(f'Pausing because run_until: {self.config.run_until}')
+            logging.debug(f'Run from {self.config.run_from} until {self.config.run_until}')
+
+            if current_time >= self.config.run_until_t or current_time <= self.config.run_from_t:
+                logging.info(f'Starting pause because outside run time: from {self.config.run_from} until {self.config.run_until}')
                 self.paused = True
 
         if self.paused:
             logging.debug(f'Paused, check the time. now: {self.now.time()}, run from: {self.config.run_from}')
-            if self.now.time() <= self.config.run_from_t:
-                logging.info(f'Ending pause because run_from: {self.config.run_from}')
+            if current_time >= self.config.run_from_t and current_time <= self.config.run_until_t:
+                logging.info(f'Ending pause because inside run time: from {self.config.run_from} until {self.config.run_until}')
                 self.paused = False
 
         if self.paused:
@@ -326,7 +391,7 @@ class MotionConsumer(ImageConsumer):
     def check_stop_at(self):
         if self.config.stop_at and self.now > self.config.stop_at:
             logging.info(f'Shutting down due to "stop_at": {self.config.stop_at.strftime("%Y/%m/%d %H:%M:%S")}')
-            pl.die()
+            self.signal_shutdown()
             return False
         return True
 
@@ -365,7 +430,6 @@ class MotionConsumer(ImageConsumer):
         ats = self.now.strftime('%Y/%m/%d %H:%M:%S')
         annotatation = f'{ats}' if self.config.show_name else None
 
-        logging.debug(f'new: {self.current_image}, old: {self.previous_image}, testframe: {self.config.testframe}')
         if self.current_image is not None and self.previous_image is None:
             # There are some config items that need to be adjusted once we know the height and width of the images.
             # In the case where we are reading from files, until we process the first image we don't know the sizes
@@ -399,7 +463,8 @@ class MotionConsumer(ImageConsumer):
                     new_name = new_name_motion
                     logging.info(f'Motion Detected: {new_name}')
                 else:
-                    logging.debug('No Motion Detected')
+                    # logging.debug('No Motion Detected')
+                    pass
 
                 if img_out is not None:
                     logging.debug(f'{new_name}')

@@ -375,7 +375,7 @@ class MotionDetectionApp():
             producer = DirectoryProducer(self.source_dir, 'png', self._queue, self._shutdown_event)
         else:
             # create images using camera
-            producer = CameraProducer(self.width, self.height, self._config.prefix, self._queue, self._shutdown_event)
+            producer = CameraProducer(self.width, self.height, self._config.prefix, self._config, self._queue, self._shutdown_event)
         consumer = MotionConsumer(self._config, self._queue, self._shutdown_event)
 
         consumer.start()
