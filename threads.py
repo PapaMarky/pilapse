@@ -196,14 +196,14 @@ class CameraProducer(ImageProducer):
     #    - stop_at
     #    - nframes
     # or move that control into app?
-    def __init__(self, width, height, prefix, config, work_queue, shutdown_event):
+    def __init__(self, width, height, zoom, prefix, config, work_queue, shutdown_event):
         super().__init__(work_queue, shutdown_event)
         self.setName('CameraProducer')
         self.width = width
         self.height = height
         self.prefix = prefix
         self.config = copy(config)
-        self.camera = Camera(width, height)
+        self.camera = Camera(width, height, zoom)
 
         self.paused = False if self.config.run_from is None else True
 

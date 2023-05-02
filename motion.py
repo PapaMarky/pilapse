@@ -66,6 +66,7 @@ class MotionConfig(Config):
         frame = parser.add_argument_group('Frame Setup', 'Parameters that control the generated frames')
         frame.add_argument('--width', '-W', type=int, help='width of each frame', default=640)
         frame.add_argument('--height', '-H', type=int, help='height of each frame', default=480)
+        frame.add_argument('--zoom', type=float, help='Zoom factor. Must be greater than 1.0', default=1.0)
         frame.add_argument('--outdir', type=str,
                            help='directory where frame files will be written.',
                            default='./%Y%m%d')
@@ -342,6 +343,12 @@ class MotionDetectionApp():
                 self.shrinkto = self.height * self.shrinkto
             self.shrinkto = int(self.shrinkto)
 
+        if self._config.zoom < 1.0:
+            msg = f'Zoom must be 1.0 or greater. (set to: {self._config.zoom})'
+            sys.stderr.write(msg + '\n')
+            logging.error(msg)
+            pl.die()
+
         if '%' in self.outdir:
             self.outdir = datetime.strftime(datetime.now(), self.outdir)
         os.makedirs(self.outdir, exist_ok=True)
@@ -375,7 +382,7 @@ class MotionDetectionApp():
             producer = DirectoryProducer(self.source_dir, 'png', self._queue, self._shutdown_event)
         else:
             # create images using camera
-            producer = CameraProducer(self.width, self.height, self._config.prefix, self._config, self._queue, self._shutdown_event)
+            producer = CameraProducer(self.width, self.height, self._config.zoom, self._config.prefix, self._config, self._queue, self._shutdown_event)
         consumer = MotionConsumer(self._config, self._queue, self._shutdown_event)
 
         consumer.start()
