@@ -1,4 +1,5 @@
 import argparse
+import subprocess
 from copy import copy
 import os
 import queue
@@ -8,6 +9,8 @@ from datetime import datetime, timedelta
 from glob import glob
 from queue import Queue
 import logging
+
+import psutil
 import watchdog.events
 import watchdog.observers
 import cv2
@@ -101,17 +104,40 @@ class CameraImage(Image):
     def __init__(self, image, prefix='snap', type='png'):
         super().__init__(image=image, prefix=prefix, type=type)
 
+class PilapseThread(threading.Thread):
+    def __init__(self, name='PL_Thread'):
+        super().__init__(name=name)
+        self.excecption:Exception = None
 
-class ImageProducer(threading.Thread):
+    def do_work(self):
+        pass
+    def run(self):
+        try:
+            self.do_work()
+        except Exception as e:
+            self.excecption = e
+
+    def join(self):
+        threading.Thread.join(self)
+        # Since join() returns in caller thread
+        # we re-raise the caught exception
+        # if any was caught
+        if self.excecption:
+            raise self.excecption
+
+class ImageProducer(PilapseThread):
     def __init__(self, work_queue:Queue, shutdown_event:threading.Event):
         super().__init__(name='ImageProducer')
         self.queue:Queue = work_queue
         self.shutdown_event:threading.Event = shutdown_event
 
+    def log_status(self):
+        pass
+
     def preproduce(self):
         pass
 
-    def run(self) -> None:
+    def do_work(self) -> None:
         shutdown_event = self.shutdown_event
         logging.info(f'running ImageProducer ({self.shutdown_event})')
         while True:
@@ -150,7 +176,7 @@ class DirectoryProducer(ImageProducer):
         self.observer = watchdog.observers.Observer()
         self.observer.schedule(self.handler, path=self.dirpath, recursive=False)
 
-    def run(self) -> None:
+    def do_work(self) -> None:
         if self.shutdown_event.is_set():
             logging.info('Shutdown event received at beginning of run')
             return
@@ -223,6 +249,25 @@ class CameraProducer(ImageProducer):
 
         time.sleep(2) # this is really so the camera can warm up
 
+    def get_camera_model(self):
+        return self.camera.model()
+
+    def log_status(self):
+        if self.now > self.report_time:
+            elapsed = self.now - self.start_time
+            elapsed_str = str(elapsed).split('.')[0]
+            FPS = self.nframes / elapsed.total_seconds()
+            with open('/sys/class/thermal/thermal_zone0/temp') as f:
+                temp = int(f.read().strip()) / 1000
+            p = subprocess.run(['vcgencmd', 'measure_temp'], capture_output=True)
+            t = p.stdout.decode()
+            r = r'^temp=([.0-9]+)'
+            m = re.match(r, t)
+            t = m.group(1) if m is not None else ''
+
+            # logging.info(f'# {os.uname()[1]}: CPU {psutil.cpu_percent()}%, mem {psutil.virtual_memory().percent}%, TEMP CPU: {temp:.1f}C GPU: {t}C')
+            logging.info(f'  - Elapsed: {elapsed_str} frames: {self.nframes} saved: {self.keepers} FPS: {FPS:.2f} Paused: {self.paused}')
+            self.report_time = self.report_time + self.report_wait
 
     def check_run_until(self):
         # Manage run_from and run_until
@@ -270,7 +315,7 @@ class CameraProducer(ImageProducer):
             logging.debug(f'captured {img.base_filename}')
             self.queue.put(img)
 
-class ImageConsumer(threading.Thread):
+class ImageConsumer(PilapseThread):
     def __init__(self, config:argparse.Namespace, queue:queue.Queue, shutdown_event:threading.Event):
         super().__init__()
         self.config = copy(config)
@@ -285,9 +330,22 @@ class ImageConsumer(threading.Thread):
         self.report_wait = timedelta(seconds=30)
         self.report_time = self.start_time + self.report_wait
 
+        self.outdir = self.config.outdir
         if '%' in self.config.outdir:
-            self.config.outdir = datetime.strftime(datetime.now(), self.config.outdir)
-        os.makedirs(self.config.outdir, exist_ok=True)
+            self.outdir = datetime.strftime(datetime.now(), self.config.outdir)
+        os.makedirs(self.outdir, exist_ok=True)
+
+        self.current_time = self.now
+
+    def set_outdir(self):
+        if '%' in self.config.outdir and self.current_time.minute != self.now.minute:
+            logging.debug(f'Time (minute) changed, checking outdir')
+            self.current_time = self.now
+            new_outdir = datetime.strftime(datetime.now(), self.config.outdir)
+            if new_outdir != self.outdir:
+                self.outdir = new_outdir
+                os.makedirs(self.outdir, exist_ok=True)
+                logging.info(f'New outdir: {self.outdir}')
 
     def signal_shutdown(self):
         self._shutdown_event.set()
@@ -303,13 +361,21 @@ class ImageConsumer(threading.Thread):
     def log_status(self):
         if self.now > self.report_time:
             elapsed = self.now - self.start_time
+            elapsed_str = str(elapsed).split('.')[0]
             FPS = self.nframes / elapsed.total_seconds()
             with open('/sys/class/thermal/thermal_zone0/temp') as f:
                 temp = int(f.read().strip()) / 1000
-            logging.info(f'Elapsed: {elapsed}, {self.nframes} frames. {self.keepers} saved. FPS = {FPS:5.2f} CPU Temp {temp}c Paused: {self.paused}')
+            p = subprocess.run(['vcgencmd', 'measure_temp'], capture_output=True)
+            t = p.stdout.decode()
+            r = r'^temp=([.0-9]+)'
+            m = re.match(r, t)
+            t = m.group(1) if m is not None else ''
+
+            logging.info(f'# {os.uname()[1]}: CPU {psutil.cpu_percent()}%, mem {psutil.virtual_memory().percent}%, TEMP CPU: {temp:.1f}C GPU: {t}C')
+            logging.info(f'  - Elapsed: {elapsed_str} frames: {self.nframes} saved: {self.keepers} FPS: {FPS:.2f} Paused: {self.paused}')
             self.report_time = self.report_time + self.report_wait
 
-    def run(self) -> None:
+    def do_work(self) -> None:
         self.start_time = datetime.now()
         logging.info(f'Starting Motion Capture ({self.start_time.strftime("%Y/%m/%d %H:%M:%S")})')
         self.paused = False if self.config.run_from is None else True
@@ -325,6 +391,8 @@ class ImageConsumer(threading.Thread):
                 force_consume = True
 
             self.now = datetime.now()
+            self.set_outdir()
+
             self.log_status()
             if not self._queue.empty():
                 if self.preconsume() or force_consume:
@@ -344,11 +412,6 @@ class MotionConsumer(ImageConsumer):
         self.previous_image:CameraImage = None
         self.count = 0
         self.paused = False
-
-        self.outdir = self.config.outdir
-        if '%' in self.outdir:
-            self.outdir = datetime.strftime(datetime.now(), self.outdir)
-        os.makedirs(self.outdir, exist_ok=True)
 
         if self.config.stop_at is not None:
             logging.debug(f'Setting stop-at: {self.config.stop_at}')
@@ -419,6 +482,7 @@ class MotionConsumer(ImageConsumer):
         self.config.right = int(self.config.right * w)
 
     def consume_image(self, image):
+
         self.nframes += 1
         self.previous_image = self.current_image
         self.current_image = image
@@ -453,7 +517,7 @@ class MotionConsumer(ImageConsumer):
                 cv2.rectangle(copy, (100, 100), (100 + self.config.mindiff, 100 + self.config.mindiff), WHITE)
 
                 pl.annotate_frame(copy, annotatation, self.config)
-                path = os.path.join(self.config.outdir, new_name_motion)
+                path = os.path.join(self.outdir, new_name_motion)
                 path = path.replace('90M', '90MT')
                 logging.debug(f'Writing Test Image: {path}')
                 cv2.imwrite(path, copy)
@@ -470,26 +534,31 @@ class MotionConsumer(ImageConsumer):
                     logging.debug(f'{new_name}')
                     self.keepers += 1
                     pl.annotate_frame(img_out, annotatation, self.config)
-                    path = os.path.join(self.config.outdir, new_name)
+                    path = os.path.join(self.outdir, new_name)
                     logging.debug(f'Writing Motion frame: {path}')
                     cv2.imwrite(path, img_out)
                 elif self.config.all_frames:
-                    path = os.path.join(self.config.outdir, new_name)
+                    path = os.path.join(self.outdir, new_name)
                     logging.debug(f'Writing all frames: {path}')
                     pl.annotate_frame(self.current_image.image, annotatation, self.config)
                     cv2.imwrite(path, self.current_image.image)
 
     def compare_images(self):
-        # original = cv2.cvtColor(original, cv2.COLOR_BGR2GRAY)
-        # new = cv2.cvtColor(new, cv2.COLOR_BGR2GRAY)
         original = self.previous_image.image
         new = self.current_image.image
+
         config = self.config
         fname_base = self.current_image.base_filename
         #resize the images to make them smaller. Bigger image may take a significantly
         #more computing power and time
         motion_detected = False
         image_in = new.copy()
+
+        ### EXPERIMENT: Try blurring the source images to reduce lots of small movement from registering
+        # original = cv2.blur(original, (10, 10))
+        # new = cv2.blur(new, (10, 10))
+
+
         scale = 1.0
         if config.shrinkto is not None:
             scale  = config.height / config.shrinkto
@@ -575,7 +644,7 @@ class MotionConsumer(ImageConsumer):
         copy = None
         def get_copy(copy):
             if copy is None:
-                copy = new.copy()
+                copy = image_in.copy()
             return copy
 
         # logging.debug(f'NEW SHAPE: {new.shape}')
@@ -618,6 +687,3 @@ class MotionConsumer(ImageConsumer):
                     cv2.rectangle(copy, (sx, sy), (sx + sw, sy + sh), MAGENTA)
 
         return copy, motion_detected
-
-    def xxxcompare_images(self):
-        pass
