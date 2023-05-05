@@ -1,29 +1,28 @@
 #! /usr/bin/env python3
 
 import argparse
-import json
 import signal
 from datetime import datetime, timedelta
-from picamera import PiCamera
 from config import Config
 
 import cv2
-import imutils
 import logging
 import os
 import sys
 import time
-import pause
 
 time_to_die = False
 def it_is_time_to_die():
+    logging.debug(f'Is it time_to_die?: {time_to_die}')
     return time_to_die
 
 def set_time_to_die():
+    global time_to_die
+    logging.debug('Setting "time_to_die"')
     time_to_die = True
 
 def exit_gracefully(signum, frame):
-    logging.info(f'SHUTTING DOWN due to {signal.Signals(signum).name}')
+    logging.info(f'SHUTTING {get_program_name()} DOWN due to {signal.Signals(signum).name}')
     set_time_to_die()
 
 signal.signal(signal.SIGINT, exit_gracefully)
@@ -58,28 +57,33 @@ def create_pid_file():
         return False
     with open(get_pid_file(), 'w') as pidout:
         pid = os.getpid()
-        print(f'saving PID in {pidfile}')
+        logging.info(f'saving PID ({pid}) in {pidfile}')
         pidout.write(f'{pid}')
+    return True
 
 def delete_pid_file():
     pidfile = get_pid_file()
+    logging.info(f'Deleting PID file: {pidfile}')
     if os.path.exists(pidfile):
+        logging.debug(f' - found {pidfile}')
         with open(pidfile) as f:
-            pid = f.read()
+            pid = int(f.read())
             if os.getpid() != pid:
                 logging.warning(f'PID file exists but contains "{pid}" (my pid is {os.getpid()})')
                 return
+        logging.debug(f' - deleting {pidfile}')
         os.remove(pidfile)
 
 def die(status=0):
     logging.info(f'Time to die')
     delete_pid_file()
+    time.sleep(0.1)
     sys.exit(status)
 
 logging.basicConfig(filename=f'{get_program_name()}.log',
 #                    encoding='utf-8', # doesn't work in py 3.7
                     level=logging.INFO,
-                    format='%(asctime)s|%(levelname)s|%(message)s'
+                    format='%(asctime)s|%(levelname)s|%(threadName)s|%(message)s'
                     )
 
 
@@ -193,61 +197,19 @@ class PilapseConfig(Config):
                 return None
         return config
 
-def process_config(myconfig):
-    myconfig.bottom = int(myconfig.bottom * myconfig.height)
-    myconfig.top = int(myconfig.top * myconfig.height)
-    myconfig.left = int(myconfig.left * myconfig.width)
-    myconfig.right = int(myconfig.right * myconfig.width)
-
-    if myconfig.shrinkto is not None:
-        logging.debug('shrinkto is set')
-        if myconfig.shrinkto <= 1.0:
-            logging.debug('shrink to is float')
-            myconfig.shrinkto = myconfig.height * myconfig.shrinkto
-        myconfig.shrinkto = int(myconfig.shrinkto)
-
-    if '%' in myconfig.outdir:
-        myconfig.outdir = datetime.strftime(datetime.now(), myconfig.outdir)
-    os.makedirs(myconfig.outdir, exist_ok=True)
-
-    if myconfig.stop_at is not None:
-        logging.debug(f'Setting stop-at: {myconfig.stop_at}')
-        (hour, minute, second) = myconfig.stop_at.split(':')
-        myconfig.stop_at = datetime.now().replace(hour=int(hour), minute=int(minute), second=int(second), microsecond=0)
-
-    if myconfig.run_from is not None:
-        logging.debug(f'Setting run-until: {myconfig.run_from}')
-        myconfig.__dict__['run_from_t'] = datetime.strptime(myconfig.run_from, '%H:%M:%S').time()
-
-    if myconfig.run_until is not None:
-        logging.debug(f'Setting run-until: {myconfig.run_until}')
-        myconfig.__dict__['run_until_t'] = datetime.strptime(myconfig.run_until, '%H:%M:%S').time()
-
-    if myconfig.framerate is not None:
-        if not myconfig.all_frames:
-            logging.warning(f'framerate set to {myconfig.framerate}, but all-frames not set. Ignoring framerate.')
-            myconfig.framerate = 0
-        else:
-            myconfig.framerate_delta = timedelta(seconds=myconfig.framerate)
-            myconfig.nomotion = True
-
-    if myconfig.label_rgb is not None:
-        (R,G,B) = myconfig.label_rgb.split(',')
-        myconfig.label_rgb = BGR(int(R), int(G), int(B))
-
-    return myconfig
-
 
 def annotate_frame(image, annotaton, config):
     if annotaton:
-        text_height = 10
+        text_height = int(config.height / 40)
+        thickness = int(config.height * 1/480)
+        if thickness < 1:
+            thickness = 1
         pos = (text_height, 2 * text_height)
         font = cv2.FONT_HERSHEY_SIMPLEX
         size, baseline = cv2.getTextSize(annotaton, font, 1, 3)
         scale = text_height / size[1]
         color = config.label_rgb if config.label_rgb is not None else ORANGE
-
-        cv2.putText(image, annotaton, pos, font, scale, color=color)
+        cv2.putText(image, annotaton, pos, font, scale, thickness=thickness, color=color)
         return text_height
 
 def setup_camera(camera, config):
@@ -268,12 +230,4 @@ def snap_picture(camera, output='frame.png'):
     camera.capture(output)
     # camera.capture(output, 'rgb')
     # return output
-
-def exit_gracefully(signum, frame):
-    global time_to_die
-    logging.info(f'SHUTTING DOWN due to {signal.Signals(signum).name}')
-    time_to_die = True
-
-signal.signal(signal.SIGINT, exit_gracefully)
-signal.signal(signal.SIGTERM, exit_gracefully)
 

@@ -2,13 +2,14 @@
 
 import argparse
 import json
-import signal
+import threading
 from datetime import datetime, timedelta
-from picamera import PiCamera
+from camera import Camera
 
 from config import Config
 import pilapse as pl
-
+from queue import Queue
+from threads import DirectoryProducer, CameraProducer, MotionConsumer
 
 import cv2
 import imutils
@@ -65,6 +66,7 @@ class MotionConfig(Config):
         frame = parser.add_argument_group('Frame Setup', 'Parameters that control the generated frames')
         frame.add_argument('--width', '-W', type=int, help='width of each frame', default=640)
         frame.add_argument('--height', '-H', type=int, help='height of each frame', default=480)
+        frame.add_argument('--zoom', type=float, help='Zoom factor. Must be greater than 1.0', default=1.0)
         frame.add_argument('--outdir', type=str,
                            help='directory where frame files will be written.',
                            default='./%Y%m%d')
@@ -75,6 +77,9 @@ class MotionConfig(Config):
         frame.add_argument('--label-rgb', type=str,
                            help='Set the color of the timestamp on each frame. '
                                 'FORMAT: comma separated integers between 0 and 255, no spaces EX: "R,G,B" ')
+        frame.add_argument('--source-dir', type=str,
+                           help='If source-dir is set, image files will be loaded from a directory instead of '
+                                'the camera')
 
         timing = parser.add_argument_group('Timing', 'Control when capture starts / stops')
         timing.add_argument('--stop-at', type=str,
@@ -105,7 +110,7 @@ class MotionConfig(Config):
         return parser
 
     def load_from_list(self, arglist=None):
-        logging.info('loading config from list:')
+        logging.info('loading MOTION config from list:')
         logging.info(arglist)
         config = super().load_from_list(arglist=arglist)
         self.dump_to_log(config)
@@ -137,41 +142,6 @@ class MotionConfig(Config):
                 return None
         return config
 
-def process_config(myconfig):
-    myconfig.bottom = int(myconfig.bottom * myconfig.height)
-    myconfig.top = int(myconfig.top * myconfig.height)
-    myconfig.left = int(myconfig.left * myconfig.width)
-    myconfig.right = int(myconfig.right * myconfig.width)
-
-    if myconfig.shrinkto is not None:
-        logging.debug('shrinkto is set')
-        if myconfig.shrinkto <= 1.0:
-            logging.debug('shrink to is float')
-            myconfig.shrinkto = myconfig.height * myconfig.shrinkto
-        myconfig.shrinkto = int(myconfig.shrinkto)
-
-    if '%' in myconfig.outdir:
-        myconfig.outdir = datetime.strftime(datetime.now(), myconfig.outdir)
-    os.makedirs(myconfig.outdir, exist_ok=True)
-
-    if myconfig.stop_at is not None:
-        logging.debug(f'Setting stop-at: {myconfig.stop_at}')
-        (hour, minute, second) = myconfig.stop_at.split(':')
-        myconfig.stop_at = datetime.now().replace(hour=int(hour), minute=int(minute), second=int(second), microsecond=0)
-
-    if myconfig.run_from is not None:
-        logging.debug(f'Setting run-until: {myconfig.run_from}')
-        myconfig.__dict__['run_from_t'] = datetime.strptime(myconfig.run_from, '%H:%M:%S').time()
-
-    if myconfig.run_until is not None:
-        logging.debug(f'Setting run-until: {myconfig.run_until}')
-        myconfig.__dict__['run_until_t'] = datetime.strptime(myconfig.run_until, '%H:%M:%S').time()
-
-    if myconfig.label_rgb is not None:
-        (R,G,B) = myconfig.label_rgb.split(',')
-        myconfig.label_rgb = BGR(int(R), int(G), int(B))
-
-    return myconfig
 
 
 # based on this:
@@ -313,38 +283,170 @@ def compare_images(original, new, config, fname_base):
 
     return copy, motion_detected
 
-def annotate_frame(image, annotaton, config):
-    if annotaton:
-        pl.annotate_frame(image, annotaton, config)
+class MotionDetectionApp():
+    def __init__(self):
+        self._config_loader = MotionConfig()
+        self._config = self._config_loader.load_from_list()
 
-        cv2.putText(image, annotaton, pos, font, scale, color=color)
-        if config.debug:
-            text_height = 10
-            pos = (text_height, 2 * text_height)
-            font = cv2.FONT_HERSHEY_SIMPLEX
-            size, baseline = cv2.getTextSize(annotaton, font, 1, 3)
-            scale = text_height / size[1]
-            color = config.label_rgb if config.label_rgb is not None else ORANGE
-            t = f'({config.width:4} x {config.height:4})  ({config.top:4}, {config.left}) - ({config.bottom:4}, {config.right}), mindiff: {config.mindiff} shrinkto: {config.shrinkto}'
-            pos = (text_height, int(config.height - 1.5 * text_height))
-            cv2.putText(image, t, pos, font, scale, color=color)
+        if self._config is None:
+            raise Exception('Bad config')
+
+        # placeholders for all the valid parameters
+        self.mindiff = self._config.mindiff
+        self.top = self._config.top
+        self.bottom = self._config.bottom
+        self.left = self._config.left
+        self.right = self._config.right
+        self.shrinkto = self._config.shrinkto
+        self.threshold = self._config.threshold
+        self.dilation = self._config.dilation
+        self.all_frames = self._config.all_frames
+        self.width = self._config.width
+        self.height = self._config.height
+        self.outdir = self._config.outdir
+        self.prefix = self._config.prefix
+        self.show_name = self._config.show_name
+        self.label_rgb = self._config.label_rgb
+        self.source_dir = self._config.source_dir
+        self.stop_at = self._config.stop_at
+        self.run_from = self._config.run_from
+        self.run_until = self._config.run_until
+        self.nframes = self._config.nframes
+        self.loglevel = self._config.loglevel
+        self.save_config = self._config.save_config
+        self.save_diffs = self._config.save_diffs
+        self.debug = self._config.debug
+        self.show_motion = self._config.show_motion
+        self.testframe = self._config.testframe
+
+        if not pl.it_is_time_to_die():
+            self.process_config()
+            self._queue = Queue()
+            self._shutdown_event = threading.Event()
+
+
+    def process_config(self):
+
+        for k, v in self._config.__dict__.items():
+            if k not in self.__dict__:
+                logging.warning(f'Config attribute missing: {k}, config: {v}')
+            self.__dict__[k] = v
+
+        self.bottom = int(self.bottom * self.height)
+        self.top = int(self.top * self.height)
+        self.left = int(self.left * self.width)
+        self.right = int(self.right * self.width)
+
+        if self.shrinkto is not None:
+            logging.debug('shrinkto is set')
+            if self.shrinkto <= 1.0:
+                self.shrinkto = self.height * self.shrinkto
+            self.shrinkto = int(self.shrinkto)
+
+        if self._config.zoom < 1.0:
+            msg = f'Zoom must be 1.0 or greater. (set to: {self._config.zoom})'
+            sys.stderr.write(msg + '\n')
+            logging.error(msg)
+            pl.die()
+
+        if self.stop_at is not None:
+            logging.debug(f'Setting stop-at: {self.stop_at}')
+            (hour, minute, second) = self.stop_at.split(':')
+            self.stop_at = datetime.now().replace(hour=int(hour), minute=int(minute), second=int(second), microsecond=0)
+
+        if self.run_from is not None:
+            logging.debug(f'Setting run-until: {self.run_from}')
+            self.__dict__['run_from_t'] = datetime.strptime(self.run_from, '%H:%M:%S').time()
+
+        if self.run_until is not None:
+            logging.debug(f'Setting run-until: {self.run_until}')
+            self.__dict__['run_until_t'] = datetime.strptime(self.run_until, '%H:%M:%S').time()
+
+        if self.label_rgb is not None:
+            (R,G,B) = self.label_rgb.split(',')
+            self.label_rgb = BGR(int(R), int(G), int(B))
+
+    def run(self):
+        if pl.it_is_time_to_die():
+            return
+        ###
+        # Create a Motion Consumer and Image Producer. Start them up.
+
+        producer = None
+        if self.source_dir:
+            # load images from directory
+            producer = DirectoryProducer(self.source_dir, 'png', self._queue, self._shutdown_event)
+        else:
+            # create images using camera
+            producer = CameraProducer(self.width, self.height, self._config.zoom, self._config.prefix, self._config, self._queue, self._shutdown_event)
+        consumer = MotionConsumer(self._config, self._queue, self._shutdown_event)
+
+        consumer.start()
+        producer.start()
+
+        while True:
+            logging.debug(f'waiting: producer alive? {producer.is_alive()}, consumer alive? {consumer.is_alive()}')
+            if not consumer.is_alive() or not producer.is_alive():
+                self._shutdown_event.set()
+                pl.set_time_to_die()
+
+            if pl.it_is_time_to_die():
+                logging.info('Shutting down')
+                self._shutdown_event.set()
+                break
+
+                logging.info('Waiting for producer...')
+                try:
+                    producer.join(5.0)
+                    if producer.is_alive():
+                        logging.warning('- Timed out, producer is still alive.')
+                except Exception as e:
+                    logging.exception(e)
+
+                logging.info('Waiting for consumer...')
+                try:
+                    consumer.join(5.0)
+                    if consumer.is_alive():
+                        logging.warning('- Timed out, consumer is still alive.')
+                except Exception as e:
+                    logging.exception(e)
+
+                break
+            now = datetime.now()
+            if self.stop_at and now > self.stop_at:
+                logging.info(f'Shutting down due to "stop_at": {self.stop_at.strftime("%Y/%m/%d %H:%M:%S")}')
+                pl.die()
+            time.sleep(1)
+        pl.die()
 
 def main():
+    try:
+        if not pl.create_pid_file():
+            pl.die()
+        app = MotionDetectionApp()
+        if not pl.it_is_time_to_die():
+            app.run()
+    except Exception as e:
+        logging.exception(e)
+
+def oldmain():
     pl.create_pid_file()
 
-    pilapse_config = MotionConfig()
-    config = pilapse_config.load_from_list()
+    motion_config = MotionConfig()
 
-    pilapse_config.dump_to_log(config)
-    config = process_config(config)
+    logging.info(f'Loading command line parameters')
+    config = motion_config.load_from_list()
+    motion_config.dump_to_log(config)
+
+
+    #config = process_config(config)
     if config is None:
         pl.die(1)
 
     logging.debug(f'CMD: {" ".join(sys.argv)}')
-    pilapse_config.dump_to_log(config)
+    motion_config.dump_to_log(config)
 
-    camera = PiCamera()
-    pl.setup_camera(camera, config)
+    camera = Camera(config)
     original = None
     orig_name = ''
     new = None
@@ -389,8 +491,8 @@ def main():
         new_name_motion = f'{fname_base}_90M.png'
         ats = now.strftime('%Y/%m/%d %H:%M:%S')
         annotatation = f'{ats}' if config.show_name else None
-        pl.snap_picture(camera)
-        new = cv2.imread('frame.png')
+        img_file_name = 'frame.png'
+        new = camera.capture()
 
         if new is not None and original is None:
             if config.testframe:
@@ -409,7 +511,7 @@ def main():
                 cv2.rectangle(copy, (100, 100), (100 + config.mindiff, 100 + config.mindiff), WHITE)
 
                 logging.info(f'TEST IMAGE: {new_name_motion}, top: {config.top}, bottom: {config.bottom}, left: {config.left}')
-                annotate_frame(copy, annotatation, config)
+                pl.annotate_frame(copy, annotatation, config)
                 cv2.imwrite(os.path.join(config.outdir, new_name_motion), copy)
 
         elif original is not None and new is not None:
@@ -425,11 +527,11 @@ def main():
             elif copy is not None:
                 logging.debug(f'{new_name}')
                 keepers += 1
-                annotate_frame(copy, annotatation, config)
+                pl.annotate_frame(copy, annotatation, config)
                 cv2.imwrite(os.path.join(config.outdir, new_name), copy)
             elif config.all_frames:
                 logging.debug(f'{new_name}')
-                annotate_frame(new, annotatation, config)
+                pl.annotate_frame(new, annotatation, config)
                 cv2.imwrite(os.path.join(config.outdir, new_name), new)
         original = new
         orig_name = new_name

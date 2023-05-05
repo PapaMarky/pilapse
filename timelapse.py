@@ -1,10 +1,8 @@
 #! /usr/bin/env python3
 
 import argparse
-import json
-import signal
 from datetime import datetime, timedelta
-from picamera import PiCamera
+from camera import Camera
 
 from config import Config
 import pilapse as pl
@@ -80,52 +78,71 @@ class TimelapseConfig(Config):
                              help='Only run until this time of day. (Format: HH:MM:SS with HH in 24 hour format)')
         return parser
 
+    def load_from_list(self, arglist=None):
+        logging.info(f'loading {pl.get_program_name()} config from list')
+        config = super().load_from_list(arglist=arglist)
+        self.dump_to_log(config)
 
-def process_config(myconfig):
+        if config.save_config:
+            config_file = 'motion-config.json'
+            logging.info(f'Saving config to {config_file}')
+            config.save_config = False
+            with open(config_file, 'w') as json_file:
+                logging.info(f'Dict Type: {type(config.__dict__)}')
+                logging.info(f'Dict: {config.__dict__}')
+                json_file.write(json.dumps(config.__dict__, indent=2))
+            pl.die()
 
-    if '%' in myconfig.outdir:
-        myconfig.outdir = datetime.strftime(datetime.now(), myconfig.outdir)
-    os.makedirs(myconfig.outdir, exist_ok=True)
+        if config.loglevel is not None:
+            oldlevel = logging.getLevelName(logging.getLogger().getEffectiveLevel())
+            level = config.loglevel.upper()
+            logging.info(f'Setting log level from {oldlevel} to {level}')
+            logging.getLogger().setLevel(level)
 
-    if myconfig.stop_at is not None:
-        logging.debug(f'Setting stop-at: {myconfig.stop_at}')
-        (hour, minute, second) = myconfig.stop_at.split(':')
-        myconfig.stop_at = datetime.now().replace(hour=int(hour), minute=int(minute), second=int(second), microsecond=0)
+        if '%' in config.outdir:
+            config.outdir = datetime.strftime(datetime.now(), config.outdir)
+        os.makedirs(config.outdir, exist_ok=True)
 
-    if myconfig.run_from is not None:
-        logging.debug(f'Setting run_from: {myconfig.run_from}')
-        myconfig.__dict__['run_from_t'] = datetime.strptime(myconfig.run_from, '%H:%M:%S').time()
+        if config.stop_at is not None:
+            logging.debug(f'Setting stop-at: {config.stop_at}')
+            (hour, minute, second) = config.stop_at.split(':')
+            config.stop_at = datetime.now().replace(hour=int(hour), minute=int(minute), second=int(second), microsecond=0)
 
-    if myconfig.run_until is not None:
-        logging.debug(f'Setting run-until: {myconfig.run_until}')
-        myconfig.__dict__['run_until_t'] = datetime.strptime(myconfig.run_until, '%H:%M:%S').time()
+        if config.run_from is not None:
+            logging.debug(f'Setting run_from: {config.run_from}')
+            config.__dict__['run_from_t'] = datetime.strptime(config.run_from, '%H:%M:%S').time()
 
-    if myconfig.framerate is not None:
-        myconfig.framerate_delta = timedelta(seconds=myconfig.framerate)
+        if config.run_until is not None:
+            logging.debug(f'Setting run-until: {config.run_until}')
+            config.__dict__['run_until_t'] = datetime.strptime(config.run_until, '%H:%M:%S').time()
 
-    if myconfig.label_rgb is not None:
-        (R,G,B) = myconfig.label_rgb.split(',')
-        myconfig.label_rgb = BGR(int(R), int(G), int(B))
+        if config.framerate is not None:
+            config.framerate_delta = timedelta(seconds=config.framerate)
 
-    return myconfig
+        if config.label_rgb is not None:
+            (R,G,B) = config.label_rgb.split(',')
+            config.label_rgb = BGR(int(R), int(G), int(B))
 
+        return config
 
 def main():
-    pl.create_pid_file()
+    logging.info(f' --- Starting {pl.get_program_name()} ---')
+    if not pl.create_pid_file():
+        print(f'{pl.get_program_name()} might be running already. '
+              f'If it is not, delete {pl.get_program_name()}.pid and try again')
+        pl.die(1)
 
     timelapse_config = TimelapseConfig()
     config = timelapse_config.load_from_list()
 
     timelapse_config.dump_to_log(config)
-    config = process_config(config)
     if config is None:
         pl.die(1)
 
     logging.debug(f'CMD: {" ".join(sys.argv)}')
     timelapse_config.dump_to_log(config)
 
-    camera = PiCamera()
-    pl.setup_camera(camera, config)
+    camera = Camera(config)
 
     nframes = 0
     start_time = datetime.now()
@@ -177,7 +194,7 @@ def main():
         annotatation = f'{ats}' if config.show_name else None
         new_path = os.path.join(config.outdir, new_name)
         logging.debug(f'About to snap')
-        pl.snap_picture(camera, new_path)
+        camera.file_capture(new_path)
 
         if nframes == 1 and config.testframe:
             logging.debug(f'Creating Test Frame')
