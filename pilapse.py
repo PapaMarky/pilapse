@@ -197,50 +197,6 @@ class PilapseConfig(Config):
                 return None
         return config
 
-def process_config(myconfig):
-    myconfig.bottom = int(myconfig.bottom * myconfig.height)
-    myconfig.top = int(myconfig.top * myconfig.height)
-    myconfig.left = int(myconfig.left * myconfig.width)
-    myconfig.right = int(myconfig.right * myconfig.width)
-
-    if myconfig.shrinkto is not None:
-        logging.debug('shrinkto is set')
-        if myconfig.shrinkto <= 1.0:
-            logging.debug('shrink to is float')
-            myconfig.shrinkto = myconfig.height * myconfig.shrinkto
-        myconfig.shrinkto = int(myconfig.shrinkto)
-
-    if '%' in myconfig.outdir:
-        myconfig.outdir = datetime.strftime(datetime.now(), myconfig.outdir)
-    os.makedirs(myconfig.outdir, exist_ok=True)
-
-    if myconfig.stop_at is not None:
-        logging.debug(f'Setting stop-at: {myconfig.stop_at}')
-        (hour, minute, second) = myconfig.stop_at.split(':')
-        myconfig.stop_at = datetime.now().replace(hour=int(hour), minute=int(minute), second=int(second), microsecond=0)
-
-    if myconfig.run_from is not None:
-        logging.debug(f'Setting run-until: {myconfig.run_from}')
-        myconfig.__dict__['run_from_t'] = datetime.strptime(myconfig.run_from, '%H:%M:%S').time()
-
-    if myconfig.run_until is not None:
-        logging.debug(f'Setting run-until: {myconfig.run_until}')
-        myconfig.__dict__['run_until_t'] = datetime.strptime(myconfig.run_until, '%H:%M:%S').time()
-
-    if myconfig.framerate is not None:
-        if not myconfig.all_frames:
-            logging.warning(f'framerate set to {myconfig.framerate}, but all-frames not set. Ignoring framerate.')
-            myconfig.framerate = 0
-        else:
-            myconfig.framerate_delta = timedelta(seconds=myconfig.framerate)
-            myconfig.nomotion = True
-
-    if myconfig.label_rgb is not None:
-        (R,G,B) = myconfig.label_rgb.split(',')
-        myconfig.label_rgb = BGR(int(R), int(G), int(B))
-
-    return myconfig
-
 
 def annotate_frame(image, annotaton, config):
     if annotaton:
