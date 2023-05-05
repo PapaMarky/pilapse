@@ -1,4 +1,5 @@
 import argparse
+import shutil
 import subprocess
 from copy import copy
 import os
@@ -31,6 +32,7 @@ YELLOW = BGR(255, 255, 0)
 ORANGE = BGR(255,165,0)
 WHITE = BGR(255, 255, 255)
 
+GIG = 1024 * 1024 * 1024
 class Image():
 
     timestamp_pattern = '%Y%m%d_%H%M%S.%f'
@@ -115,6 +117,7 @@ class PilapseThread(threading.Thread):
         try:
             self.do_work()
         except Exception as e:
+            logging.exception(e)
             self.excecption = e
 
     def join(self):
@@ -331,7 +334,7 @@ class ImageConsumer(PilapseThread):
         self.report_time = self.start_time + self.report_wait
 
         self.outdir = self.config.outdir
-        if '%' in self.config.outdir:
+        if '%' in self.outdir:
             self.outdir = datetime.strftime(datetime.now(), self.config.outdir)
         os.makedirs(self.outdir, exist_ok=True)
 
@@ -371,13 +374,16 @@ class ImageConsumer(PilapseThread):
             m = re.match(r, t)
             t = m.group(1) if m is not None else ''
 
-            logging.info(f'# {os.uname()[1]}: CPU {psutil.cpu_percent()}%, mem {psutil.virtual_memory().percent}%, TEMP CPU: {temp:.1f}C GPU: {t}C')
-            logging.info(f'  - Elapsed: {elapsed_str} frames: {self.nframes} saved: {self.keepers} FPS: {FPS:.2f} Paused: {self.paused}')
+            d = shutil.disk_usage(self.outdir)
+            disk_usage = d.used / d.total * 100.0
+            logging.info(f'# {os.uname()[1]}: CPU {psutil.cpu_percent()}%, mem {psutil.virtual_memory().percent}% disk: {disk_usage:.1f}% TEMP CPU: {temp:.1f}C GPU: {t}C')
+            logging.info(f'  - Elapsed: {elapsed_str} frames: {self.nframes} saved: {self.keepers} FPS: {FPS:.2f} Paused: {self.paused} Q: {self._queue.qsize()}')
             self.report_time = self.report_time + self.report_wait
 
     def do_work(self) -> None:
         self.start_time = datetime.now()
         logging.info(f'Starting Motion Capture ({self.start_time.strftime("%Y/%m/%d %H:%M:%S")})')
+        logging.info(f'Config: {self.config}')
         self.paused = False if self.config.run_from is None else True
         force_consume = False
         while True:
@@ -387,7 +393,7 @@ class ImageConsumer(PilapseThread):
                 if self._queue.empty() or (self.config.nframes is not None and self.nframes >= self.config.nframes):
                     logging.info('Queue is empty. Shutting down')
                     break
-                logging.warning(f'Trying to shutdown, but queue not empty')
+                logging.warning(f'Trying to shutdown, but queue not empty: {self._queue.qsize()}')
                 force_consume = True
 
             self.now = datetime.now()
@@ -555,8 +561,15 @@ class MotionConsumer(ImageConsumer):
         image_in = new.copy()
 
         ### EXPERIMENT: Try blurring the source images to reduce lots of small movement from registering
-        # original = cv2.blur(original, (10, 10))
-        # new = cv2.blur(new, (10, 10))
+        #   (EX wind and trees)
+        if True:
+            original = cv2.blur(original, (10, 10))
+            new = cv2.blur(new, (10, 10))
+            if config.save_diffs:
+                blur_name = f'{fname_base}_00B.png'
+                path = os.path.join(self.outdir, blur_name)
+                logging.info(f'Saving {path}')
+                cv2.imwrite(path, new)
 
 
         scale = 1.0
@@ -583,11 +596,11 @@ class MotionConsumer(ImageConsumer):
         diff = original.copy()
         cv2.absdiff(original, new, diff)
         # 01 - diff
-        if config.save_diffs and False:
+        if config.save_diffs:
             diff2 = diff.copy()
             diff2 = imutils.resize(diff2, config.height)
             diff_name = f'{fname_base}_01D.png'
-            path = os.path.join(config.outdir, diff_name)
+            path = os.path.join(self.outdir, diff_name)
             logging.debug(f'Saving: {path}')
             cv2.imwrite(path, diff2)
 
@@ -598,7 +611,7 @@ class MotionConsumer(ImageConsumer):
             gray2 = gray.copy()
             gray2 = imutils.resize(gray2, config.height)
             gray_name = f'{fname_base}_02G.png'
-            path = os.path.join(config.outdir, gray_name)
+            path = os.path.join(self.outdir, gray_name)
             logging.debug(f'Saving: {path}')
             cv2.imwrite(path, gray2)
 
@@ -614,7 +627,7 @@ class MotionConsumer(ImageConsumer):
             dilated2 = dilated.copy()
             dilated2 = imutils.resize(dilated2, config.height)
             dilated_name = f'{fname_base}_03D.png'
-            path = os.path.join(config.outdir, dilated_name)
+            path = os.path.join(self.outdir, dilated_name)
             logging.debug(f'Saving: {path}')
             cv2.imwrite(path, dilated2)
 
@@ -631,7 +644,7 @@ class MotionConsumer(ImageConsumer):
             thresh2 = thresh.copy()
             thresh2 = imutils.resize(thresh2, config.height)
             thresh_name = f'{fname_base}_04T.png'
-            path = os.path.join(config.outdir, thresh_name)
+            path = os.path.join(self.outdir, thresh_name)
             logging.debug(f'Saving: {path}')
             cv2.imwrite(path, thresh2)
 

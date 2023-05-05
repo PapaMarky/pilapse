@@ -349,10 +349,6 @@ class MotionDetectionApp():
             logging.error(msg)
             pl.die()
 
-        if '%' in self.outdir:
-            self.outdir = datetime.strftime(datetime.now(), self.outdir)
-        os.makedirs(self.outdir, exist_ok=True)
-
         if self.stop_at is not None:
             logging.debug(f'Setting stop-at: {self.stop_at}')
             (hour, minute, second) = self.stop_at.split(':')
@@ -400,14 +396,20 @@ class MotionDetectionApp():
                 break
 
                 logging.info('Waiting for producer...')
-                producer.join(5.0)
-                if producer.is_alive():
-                    logging.warning('- Timed out, producer is still alive.')
+                try:
+                    producer.join(5.0)
+                    if producer.is_alive():
+                        logging.warning('- Timed out, producer is still alive.')
+                except Exception as e:
+                    logging.exception(e)
 
                 logging.info('Waiting for consumer...')
-                consumer.join(5.0)
-                if consumer.is_alive():
-                    logging.warning('- Timed out, consumer is still alive.')
+                try:
+                    consumer.join(5.0)
+                    if consumer.is_alive():
+                        logging.warning('- Timed out, consumer is still alive.')
+                except Exception as e:
+                    logging.exception(e)
 
                 break
             now = datetime.now()
@@ -418,12 +420,14 @@ class MotionDetectionApp():
         pl.die()
 
 def main():
-    if not pl.create_pid_file():
-        pl.die()
-    app = MotionDetectionApp()
-    if not pl.it_is_time_to_die():
-        app.run()
-
+    try:
+        if not pl.create_pid_file():
+            pl.die()
+        app = MotionDetectionApp()
+        if not pl.it_is_time_to_die():
+            app.run()
+    except Exception as e:
+        logging.exception(e)
 
 def oldmain():
     pl.create_pid_file()
