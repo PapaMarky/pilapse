@@ -35,16 +35,16 @@ WHITE = BGR(255, 255, 255)
 GIG = 1024 * 1024 * 1024
 class Image():
 
-    timestamp_pattern = '%Y%m%d_%H%M%S.%f'
-    def __init__(self, path=None, image=None, type='png', prefix=f'frame'):
-        self._path = path
-        self._image = image
-        self._prefix = prefix
+    timestamp_pattern:str = '%Y%m%d_%H%M%S.%f'
+    def __init__(self, path:str=None, image=None, type:str='png', prefix:str=f'frame'):
+        self._path:str = path
+        self._image:picamera.PiArrayOutput = image
+        self._prefix:str = prefix
         self._type:str = type
         self._timestamp:datetime = datetime.now()
 
     @property
-    def filepath(self):
+    def filepath(self) -> str:
         return self._path
 
 
@@ -107,8 +107,9 @@ class CameraImage(Image):
         super().__init__(image=image, prefix=prefix, type=type)
 
 class PilapseThread(threading.Thread):
-    def __init__(self, name='PL_Thread'):
+    def __init__(self, shutdown_event:threading.Event, name='PL_Thread'):
         super().__init__(name=name)
+        self.shutdown_event:threading.Event = shutdown_event
         self.excecption:Exception = None
 
     def do_work(self):
@@ -132,10 +133,9 @@ class PilapseThread(threading.Thread):
             raise self.excecption
 
 class ImageProducer(PilapseThread):
-    def __init__(self, work_queue:Queue, shutdown_event:threading.Event, name='ImageProducer'):
-        super().__init__(name=name)
-        self.out_queue:Queue = work_queue
-        self.shutdown_event:threading.Event = shutdown_event
+    def __init__(self, out_queue:Queue, shutdown_event:threading.Event, name='ImageProducer'):
+        super().__init__(shutdown_event, name=name)
+        self.out_queue:Queue = out_queue
 
     def log_status(self):
         pass
@@ -145,7 +145,7 @@ class ImageProducer(PilapseThread):
 
     def do_work(self) -> None:
         shutdown_event = self.shutdown_event
-        logging.info(f'running ImageProducer ({self.shutdown_event})')
+        logging.info(f'running ImageProducer')
         while True:
             if shutdown_event.is_set():
                 logging.info('Shutdown event received')
@@ -166,21 +166,21 @@ class DirectoryProducer(ImageProducer):
             watchdog.events.PatternMatchingEventHandler.__init__(self, patterns=patterns,
                                                                  ignore_directories=True,
                                                                  case_sensitive=True)
-            self.queue = out_queue
+            self.out_queue:Queue = out_queue
 
         def on_created(self, event):
             # logging.info(f"Watchdog received created event - {event.src_path}")
-            self.queue.put(event.src_path)
+            self.out_queue.put(event.src_path)
 
-    def __init__(self, dirpath, ext, work_queue:Queue, shutdown_event:threading.Event):
-        super().__init__(work_queue, shutdown_event, name="DirectoryProducer")
-        logging.info(f'DirectoryProducer({dirpath}, {ext}, {work_queue}, {shutdown_event})')
-        self.dirpath = dirpath
-        self.extension = ext
+    def __init__(self, dirpath:str, ext:str, out_queue:Queue, shutdown_event:threading.Event):
+        super().__init__(out_queue, shutdown_event, name="DirectoryProducer")
+        logging.info(f'DirectoryProducer({dirpath}, {ext}, {out_queue}, {shutdown_event})')
+        self.dirpath:str = dirpath
+        self.extension:str = ext
         self.new_file_queue:Queue = Queue()
-        self.handler = self.Handler([f'*.{ext}'], self.new_file_queue)
-        self.observer = watchdog.observers.Observer()
-        self.observer.schedule(self.handler, path=self.dirpath, recursive=False)
+        self.handler:DirectoryProducer.Handler = DirectoryProducer.Handler([f'*.{ext}'], self.new_file_queue)
+        self.directory_observer = watchdog.observers.Observer()
+        self.directory_observer.schedule(self.handler, path=self.dirpath, recursive=False)
 
     def do_work(self) -> None:
         if self.shutdown_event.is_set():
@@ -188,8 +188,8 @@ class DirectoryProducer(ImageProducer):
             return
         #  Load the exiting files, start the observer
         logging.info(f'Directory producer starting')
-        self.observer.setName('Observer')
-        self.observer.start()
+        self.directory_observer.setName('DirectoryObserver')
+        self.directory_observer.start()
         self.existing_files = glob(f'{self.dirpath}/*.{self.extension}')
         self.existing_files.sort()
         for file in self.existing_files:
@@ -228,15 +228,16 @@ class CameraProducer(ImageProducer):
     #    - stop_at
     #    - nframes
     # or move that control into app?
-    def __init__(self, width, height, zoom, prefix, config, work_queue, shutdown_event):
-        super().__init__(work_queue, shutdown_event, name='CameraProducer')
-        self.width = width
-        self.height = height
-        self.prefix = prefix
-        self.config = copy(config)
-        self.camera = Camera(width, height, zoom)
+    def __init__(self, width:int, height:int, zoom:float, prefix:str, config:argparse.Namespace,
+                 out_queue:Queue, shutdown_event:threading.Event):
+        super().__init__(out_queue, shutdown_event, name='CameraProducer')
+        self.width:int = width
+        self.height:int = height
+        self.prefix:str = prefix
+        self.config:argparse.Namespace = copy(config)
+        self.camera:Camera = Camera(width, height, zoom)
 
-        self.paused = False if self.config.run_from is None else True
+        self.paused:bool = False if self.config.run_from is None else True
 
         if self.config.stop_at is not None:
             logging.debug(f'Setting stop-at: {self.config.stop_at}')
@@ -321,21 +322,21 @@ class CameraProducer(ImageProducer):
             self.out_queue.put(img)
 
 class ImageConsumer(PilapseThread):
-    def __init__(self, config:argparse.Namespace, queue:queue.Queue, shutdown_event:threading.Event):
-        super().__init__()
-        self.config = copy(config)
-        self._queue = queue
-        self._shutdown_event = shutdown_event
-        self.nframes = 0
-        self.keepers = 0
-        self.start_time = datetime.now()
-        self.now = self.start_time
-        self.paused = False
+    def __init__(self, name:str, config:argparse.Namespace, in_queue:queue.Queue, shutdown_event:threading.Event):
+        super().__init__(shutdown_event, name=name)
+        self.config:argparse.Namespace = copy(config)
+        self.in_queue:Queue = in_queue
+        self._shutdown_event:threading.Event = shutdown_event
+        self.nframes:int = 0
+        self.keepers:int = 0
+        self.start_time:datetime = datetime.now()
+        self.now:datetime = self.start_time
+        self.paused:bool = False
 
         self.report_wait = timedelta(seconds=30)
         self.report_time = self.start_time + self.report_wait
 
-        self.outdir = self.config.outdir
+        self.outdir:str = self.config.outdir
         if '%' in self.outdir:
             self.outdir = datetime.strftime(datetime.now(), self.config.outdir)
         os.makedirs(self.outdir, exist_ok=True)
@@ -376,7 +377,7 @@ class ImageConsumer(PilapseThread):
             d = shutil.disk_usage(self.outdir)
             disk_usage = d.used / d.total * 100.0
             logging.info(f'# {os.uname()[1]}: CPU {psutil.cpu_percent()}%, mem {psutil.virtual_memory().percent}% disk: {disk_usage:.1f}% TEMP CPU: {temp:.1f}C GPU: {t}C')
-            logging.info(f'  - Elapsed: {elapsed_str} frames: {self.nframes} saved: {self.keepers} FPS: {FPS:.2f} Paused: {self.paused} Q: {self._queue.qsize()}')
+            logging.info(f'  - Elapsed: {elapsed_str} frames: {self.nframes} saved: {self.keepers} FPS: {FPS:.2f} Paused: {self.paused} Q: {self.in_queue.qsize()}')
             self.report_time = self.report_time + self.report_wait
 
     def do_work(self) -> None:
@@ -389,19 +390,19 @@ class ImageConsumer(PilapseThread):
             # Have we received shutdown event?
             if self._shutdown_event.is_set():
                 logging.warning(f'shutdown event is set')
-                if self._queue.empty() or (self.config.nframes is not None and self.nframes >= self.config.nframes):
+                if self.in_queue.empty() or (self.config.nframes is not None and self.nframes >= self.config.nframes):
                     logging.info('Queue is empty. Shutting down')
                     break
-                logging.warning(f'Trying to shutdown, but queue not empty: {self._queue.qsize()}')
+                logging.warning(f'Trying to shutdown, but queue not empty: {self.in_queue.qsize()}')
                 force_consume = True
 
             self.now = datetime.now()
             self.set_outdir()
 
             self.log_status()
-            if not self._queue.empty():
+            if not self.in_queue.empty():
                 if self.preconsume() or force_consume:
-                    image = self._queue.get()
+                    image = self.in_queue.get()
                     self.consume_image(image)
                 else:
                     logging.debug(f'preconsume returned false.')
@@ -410,13 +411,12 @@ class ImageConsumer(PilapseThread):
         logging.info(f'Consuming {image.filename}')
 
 class MotionConsumer(ImageConsumer):
-    def __init__(self, config, queue, shutdown_event):
-        super().__init__(config, queue, shutdown_event)
-        self.setName('MotionConsumer')
-        self.current_image:CameraImage = None
-        self.previous_image:CameraImage = None
-        self.count = 0
-        self.paused = False
+    def __init__(self, config:argparse.Namespace, in_queue:Queue, shutdown_event:threading.Event):
+        super().__init__('MotionConsumer', config, in_queue, shutdown_event)
+        self.current_image:Image = None
+        self.previous_image:Image = None
+        self.count:int = 0
+        self.paused:bool = False
 
         if self.config.stop_at is not None:
             logging.debug(f'Setting stop-at: {self.config.stop_at}')
@@ -435,7 +435,7 @@ class MotionConsumer(ImageConsumer):
             (R,G,B) = self.config.label_rgb.split(',')
             self.config.label_rgb = BGR(int(R), int(G), int(B))
 
-    def check_run_until(self):
+    def check_run_until(self) -> bool:
         # TODO should be in the producer thread. If the producer stops producing,
         # the consumer will stop consuming
 
@@ -459,14 +459,14 @@ class MotionConsumer(ImageConsumer):
             return False
         return True
 
-    def check_stop_at(self):
+    def check_stop_at(self) -> bool:
         if self.config.stop_at and self.now > self.config.stop_at:
             logging.info(f'Shutting down due to "stop_at": {self.config.stop_at.strftime("%Y/%m/%d %H:%M:%S")}')
             self.signal_shutdown()
             return False
         return True
 
-    def preconsume(self):
+    def preconsume(self) -> bool:
         # If nframes is set, have we exceeded it?
         if self.config.nframes and self.nframes > self.config.nframes:
             logging.info(f'Reached limit ({self.config.nframes} frames). Stopping.')
@@ -481,7 +481,7 @@ class MotionConsumer(ImageConsumer):
             return False
         return True
 
-    def adjust_config(self, w, h):
+    def adjust_config(self, w, h) -> None:
         self.config.width = w
         self.config.height = h
         self.config.bottom = int(self.config.bottom * h)
@@ -489,7 +489,7 @@ class MotionConsumer(ImageConsumer):
         self.config.left = int(self.config.left * w)
         self.config.right = int(self.config.right * w)
 
-    def consume_image(self, image):
+    def consume_image(self, image:Image) -> None:
 
         self.nframes += 1
         self.previous_image = self.current_image
