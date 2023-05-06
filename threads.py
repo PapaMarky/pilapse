@@ -120,6 +120,9 @@ class PilapseThread(threading.Thread):
             logging.exception(e)
             self.excecption = e
 
+    def signal_shutdown(self):
+        self._shutdown_event.set()
+
     def join(self):
         threading.Thread.join(self)
         # Since join() returns in caller thread
@@ -129,9 +132,9 @@ class PilapseThread(threading.Thread):
             raise self.excecption
 
 class ImageProducer(PilapseThread):
-    def __init__(self, work_queue:Queue, shutdown_event:threading.Event):
-        super().__init__(name='ImageProducer')
-        self.queue:Queue = work_queue
+    def __init__(self, work_queue:Queue, shutdown_event:threading.Event, name='ImageProducer'):
+        super().__init__(name=name)
+        self.out_queue:Queue = work_queue
         self.shutdown_event:threading.Event = shutdown_event
 
     def log_status(self):
@@ -150,7 +153,7 @@ class ImageProducer(PilapseThread):
             if self.preproduce():
                 image = self.produce_image()
                 if image is not None:
-                    self.queue.put(image)
+                    self.out_queue.put(image)
 
     def produce_image(self) -> str:
         raise Exception('Base clase does not implement produce_image()')
@@ -158,19 +161,19 @@ class ImageProducer(PilapseThread):
 
 class DirectoryProducer(ImageProducer):
     class Handler(watchdog.events.PatternMatchingEventHandler):
-        def __init__(self, patterns:list, queue:queue.Queue):
+        def __init__(self, patterns:list, out_queue:queue.Queue):
             # Set the patterns for PatternMatchingEventHandler
             watchdog.events.PatternMatchingEventHandler.__init__(self, patterns=patterns,
                                                                  ignore_directories=True,
                                                                  case_sensitive=True)
-            self.queue = queue
+            self.queue = out_queue
 
         def on_created(self, event):
             # logging.info(f"Watchdog received created event - {event.src_path}")
             self.queue.put(event.src_path)
 
     def __init__(self, dirpath, ext, work_queue:Queue, shutdown_event:threading.Event):
-        super().__init__(work_queue, shutdown_event)
+        super().__init__(work_queue, shutdown_event, name="DirectoryProducer")
         logging.info(f'DirectoryProducer({dirpath}, {ext}, {work_queue}, {shutdown_event})')
         self.dirpath = dirpath
         self.extension = ext
@@ -194,7 +197,7 @@ class DirectoryProducer(ImageProducer):
                 logging.info('Shutdown event received while processing existing files')
                 break
             logging.info(f'Existing File: {file}')
-            self.queue.put(FileImage(file))
+            self.out_queue.put(FileImage(file))
         look_for_dups = True
         while True:
             if self.shutdown_event.is_set():
@@ -205,7 +208,7 @@ class DirectoryProducer(ImageProducer):
                 image = FileImage(self.new_file_queue.get())
                 if look_for_dups:
                     if not image in self.existing_files:
-                        self.queue.put(image)
+                        self.out_queue.put(image)
                         logging.info(f'First New File: {image.filename}')
                         # if this file isn't in the existing files, we can deallocate that list (we are past the end)
                         self.existing_files = []
@@ -214,7 +217,7 @@ class DirectoryProducer(ImageProducer):
                         # logging.info(f'Dup File: {image}')
                         pass
                 else:
-                    self.queue.put(image)
+                    self.out_queue.put(image)
                     logging.info(f'New File: {image.filename}')
 
 
@@ -226,8 +229,7 @@ class CameraProducer(ImageProducer):
     #    - nframes
     # or move that control into app?
     def __init__(self, width, height, zoom, prefix, config, work_queue, shutdown_event):
-        super().__init__(work_queue, shutdown_event)
-        self.setName('CameraProducer')
+        super().__init__(work_queue, shutdown_event, name='CameraProducer')
         self.width = width
         self.height = height
         self.prefix = prefix
@@ -316,7 +318,7 @@ class CameraProducer(ImageProducer):
         if not self.shutdown_event.is_set():
             img = CameraImage(self.camera.capture(), prefix=self.prefix, type='png')
             logging.debug(f'captured {img.base_filename}')
-            self.queue.put(img)
+            self.out_queue.put(img)
 
 class ImageConsumer(PilapseThread):
     def __init__(self, config:argparse.Namespace, queue:queue.Queue, shutdown_event:threading.Event):
@@ -349,9 +351,6 @@ class ImageConsumer(PilapseThread):
                 self.outdir = new_outdir
                 os.makedirs(self.outdir, exist_ok=True)
                 logging.info(f'New outdir: {self.outdir}')
-
-    def signal_shutdown(self):
-        self._shutdown_event.set()
 
     def preconsume(self):
             """
@@ -437,6 +436,9 @@ class MotionConsumer(ImageConsumer):
             self.config.label_rgb = BGR(int(R), int(G), int(B))
 
     def check_run_until(self):
+        # TODO should be in the producer thread. If the producer stops producing,
+        # the consumer will stop consuming
+
         # Manage run_from and run_until
         current_time = self.now.time()
         if self.config.run_until is not None and not self.paused:
