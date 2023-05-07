@@ -20,13 +20,13 @@ class Camera():
         self.camera.zoom = (p0, p0, p1, p1)
         time.sleep(2)
         logging.info(f'setup_camera completed: Camera Resolution: {self.camera.MAX_RESOLUTION}')
-        logging.info(f' Model: {self.model()}, Zoom: {self.zoom()}')
+        logging.info(f' Model: {self.model()}, Zoom: {self.zoom_str()}')
 
-    def zoom(self):
+    def zoom_str(self) -> str:
         z = self.camera.zoom
         return f'({z[0]:.2f}, {z[1]:.2f}, {z[2]:.2f}, {z[3]:.2f})'
 
-    def model(self):
+    def model(self) -> str:
         rev = self.camera.revision
         known = {
             'ov5647': 'V1',
@@ -36,7 +36,7 @@ class Camera():
             rev = known[rev]
         return rev
 
-    def capture(self):
+    def capture(self) -> PiRGBArray:
         logging.debug('Capturing image')
         rawCapture = PiRGBArray(self.camera)
         self.camera.capture(rawCapture, format="bgr")
