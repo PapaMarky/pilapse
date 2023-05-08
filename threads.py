@@ -36,12 +36,14 @@ GIG = 1024 * 1024 * 1024
 class Image():
 
     timestamp_pattern:str = '%Y%m%d_%H%M%S.%f'
-    def __init__(self, path:str=None, image=None, type:str='png', prefix:str=f'frame'):
+    def __init__(self, path:str=None, image=None, type:str='png', prefix:str=f'frame',
+                 timestamp:datetime=datetime.now(), suffix=''):
         self._path:str = path
         self._image:picamera.PiArrayOutput = image
         self._prefix:str = prefix
         self._type:str = type
-        self._timestamp:datetime = datetime.now()
+        self._timestamp:datetime = timestamp
+        self._suffix = suffix
 
     @property
     def filepath(self) -> str:
@@ -76,21 +78,23 @@ class Image():
         return self._type
 
 class FileImage(Image):
-    def __init__(self, path):
+    def __init__(self, path, image=None):
         """
         Create a File Based Image
         :param path: full path to the image file. Expected format: "PATH/PREFIX_YYYYMMDD_HHMMSS.ssssss.TYPE"
         """
         filename = os.path.basename(path)
         # groups: 1 = prefix, 2 = timestamp, 3 = type (extension)
-        regex = r'([^_]+?)_([0-9]+?_[0-9]+?\.[0-9]+?)\.(.+)'
+        regex = r'([^_]+?)_([0-9]+?_[0-9]+?\.[0-9]+?)(_.*?)\.(.+)'
         m = re.match(regex, os.path.basename(filename))
         # 20230429/picam001_20230429_192140.054980.png
         if not m:
             raise Exception(f'Bad filename format: {path}')
-        super().__init__(path=path, type=m.group(3) )
+        super().__init__(path=path, type=m.group(4) )
         self._timestamp = datetime.strptime(m.group(2), self.timestamp_pattern)
         self._prefix = m.group(1)
+        self._suffix = m.group(3)
+        self._image = image
 
     @property
     def filename(self):
@@ -98,7 +102,8 @@ class FileImage(Image):
 
     @property
     def image(self):
-        if self.image is None:
+        if self._image is None:
+            logging.debug(f'reading image from {self._path}')
             self._image = cv2.imread(self._path)
         return self._image
 
@@ -107,17 +112,31 @@ class CameraImage(Image):
         super().__init__(image=image, prefix=prefix, type=type)
 
 class PilapseThread(threading.Thread):
-    def __init__(self, shutdown_event:threading.Event, name='PL_Thread'):
-        super().__init__(name=name)
+    def __init__(self, piname, shutdown_event:threading.Event, config:argparse.Namespace, **kwargs):
+        super().__init__(group=None, target=None, name=None)
+        self.setName(piname)
+        logging.debug(f'PilapseThread init {self.name}')
         self.shutdown_event:threading.Event = shutdown_event
+        self.config:argparse.Namespace = copy(config)
         self.excecption:Exception = None
+        self.start_time:datetime = datetime.now()
+
+        self.report_wait:timedelta = timedelta(seconds=30)
+        self.report_time:datetime = self.start_time + self.report_wait
+        self.now = datetime.now()
+
+    def start_work(self):
+        self.start_time = datetime.now()
+        self.report_time:datetime = self.start_time + self.report_wait
 
     def do_work(self):
+        logging.warning(f'PilapseThread: do_work for {self.name}')
         pass
     def run(self):
         try:
             self.do_work()
         except Exception as e:
+            logging.error(f'Exception in Thread: {self.name}')
             logging.exception(e)
             self.excecption = e
 
@@ -133,27 +152,38 @@ class PilapseThread(threading.Thread):
             raise self.excecption
 
 class ImageProducer(PilapseThread):
-    def __init__(self, out_queue:Queue, shutdown_event:threading.Event, name='ImageProducer'):
-        super().__init__(shutdown_event, name=name)
-        self.out_queue:Queue = out_queue
+    def __init__(self, name:str, shutdown_event:threading.Event, config:argparse.Namespace, **kwargs):
+        super(ImageProducer, self).__init__(name, shutdown_event, config, **kwargs)
+        logging.debug(f'ImageProducer init {self.name}')
+        self.out_queue:Queue = kwargs.get('out_queue')
+        if self.out_queue is None:
+            raise Exception(f'Creating Producer thread {self.name} with no out queue')
 
     def log_status(self):
+        logging.error('Base class log_status')
         pass
 
     def preproduce(self):
         pass
 
+    def add_to_out_queue(self, image):
+        if image is not None:
+            self.out_queue.put(image)
+            self.nframes += 1
+
     def do_work(self) -> None:
+        self.start_work()
         shutdown_event = self.shutdown_event
-        logging.info(f'running ImageProducer')
+        logging.info(f'do_work: ImageProducer: {self.name}')
         while True:
             if shutdown_event.is_set():
                 logging.info('Shutdown event received')
                 break
+            self.now = datetime.now()
             if self.preproduce():
                 image = self.produce_image()
-                if image is not None:
-                    self.out_queue.put(image)
+                self.add_to_out_queue(image)
+            self.log_status()
 
     def produce_image(self) -> str:
         raise Exception('Base clase does not implement produce_image()')
@@ -161,20 +191,20 @@ class ImageProducer(PilapseThread):
 
 class DirectoryProducer(ImageProducer):
     class Handler(watchdog.events.PatternMatchingEventHandler):
-        def __init__(self, patterns:list, out_queue:queue.Queue):
+        def __init__(self, patterns:list, file_event_queue:queue.Queue):
             # Set the patterns for PatternMatchingEventHandler
             watchdog.events.PatternMatchingEventHandler.__init__(self, patterns=patterns,
                                                                  ignore_directories=True,
                                                                  case_sensitive=True)
-            self.out_queue:Queue = out_queue
+            self.out_queue:Queue = file_event_queue
 
         def on_created(self, event):
             # logging.info(f"Watchdog received created event - {event.src_path}")
             self.out_queue.put(event.src_path)
 
-    def __init__(self, dirpath:str, ext:str, out_queue:Queue, shutdown_event:threading.Event):
-        super().__init__(out_queue, shutdown_event, name="DirectoryProducer")
-        logging.info(f'DirectoryProducer({dirpath}, {ext}, {out_queue}, {shutdown_event})')
+    def __init__(self, dirpath:str, ext:str, shutdown_event:threading.Event, config:argparse.Namespace, **kwargs):
+        super(DirectoryProducer, self).__init__('DirectoryProducer', shutdown_event, config, **kwargs)
+        logging.info(f'DirectoryProducer({dirpath}, {ext}, {kwargs.get("out_queue")}, {shutdown_event})')
         self.dirpath:str = dirpath
         self.extension:str = ext
         self.new_file_queue:Queue = Queue()
@@ -183,11 +213,12 @@ class DirectoryProducer(ImageProducer):
         self.directory_observer.schedule(self.handler, path=self.dirpath, recursive=False)
 
     def do_work(self) -> None:
+        self.start_work()
         if self.shutdown_event.is_set():
-            logging.info('Shutdown event received at beginning of run')
+            logging.info('Shutdown event received at beginning of do_work')
             return
         #  Load the exiting files, start the observer
-        logging.info(f'Directory producer starting')
+        logging.info(f'DirectoryProducer: do_work: {self.name}')
         self.directory_observer.setName('DirectoryObserver')
         self.directory_observer.start()
         self.existing_files = glob(f'{self.dirpath}/*.{self.extension}')
@@ -196,20 +227,21 @@ class DirectoryProducer(ImageProducer):
             if self.shutdown_event.is_set():
                 logging.info('Shutdown event received while processing existing files')
                 break
-            logging.info(f'Existing File: {file}')
+            logging.debug(f'Existing File: {file}')
             self.out_queue.put(FileImage(file))
         look_for_dups = True
         while True:
             if self.shutdown_event.is_set():
                 logging.info('Shutdown event received while processing new files')
                 break
+            self.now = datetime.now()
             if not self.new_file_queue.empty():
                 # get the new image, make sure we don't have it already, put it in the outgoing queue
                 image = FileImage(self.new_file_queue.get())
                 if look_for_dups:
                     if not image in self.existing_files:
                         self.out_queue.put(image)
-                        logging.info(f'First New File: {image.filename}')
+                        logging.debug(f'First New File: {image.filename}')
                         # if this file isn't in the existing files, we can deallocate that list (we are past the end)
                         self.existing_files = []
                         look_for_dups = False
@@ -218,24 +250,27 @@ class DirectoryProducer(ImageProducer):
                         pass
                 else:
                     self.out_queue.put(image)
-                    logging.info(f'New File: {image.filename}')
+                    logging.debug(f'New File: {image.filename}')
 
 
 from camera import Camera
 class CameraProducer(ImageProducer):
-    # TODO Camera producer should be aware of
+    # TODO base class producer should be aware of
     #    - "pause" due to run_from / run_until
     #    - stop_at
     #    - nframes
     # or move that control into app?
-    def __init__(self, width:int, height:int, zoom:float, prefix:str, config:argparse.Namespace,
-                 out_queue:Queue, shutdown_event:threading.Event):
-        super().__init__(out_queue, shutdown_event, name='CameraProducer')
+    def __init__(self, width:int, height:int, zoom:float, prefix:str,
+                 shutdown_event:threading.Event, config:argparse.Namespace,
+                 **kwargs):
+        super(CameraProducer, self).__init__('CameraProducer', shutdown_event, config, **kwargs)
+        logging.debug(f'CameraProducer init {self.name}')
         self.width:int = width
         self.height:int = height
         self.prefix:str = prefix
         self.config:argparse.Namespace = copy(config)
         self.camera:Camera = Camera(width, height, zoom)
+        self.nframes:int = 0
 
         self.paused:bool = False if self.config.run_from is None else True
 
@@ -251,7 +286,6 @@ class CameraProducer(ImageProducer):
         if self.config.run_until is not None:
             logging.debug(f'Setting run-until: {self.config.run_until}')
             self.config.run_until_t = datetime.strptime(self.config.run_until, '%H:%M:%S').time()
-        self.now = datetime.now()
 
         time.sleep(2) # this is really so the camera can warm up
 
@@ -259,6 +293,7 @@ class CameraProducer(ImageProducer):
         return self.camera.model()
 
     def log_status(self):
+        # logging.info(f'LOG STATUS: now: {self.now}, report time: {self.report_time}')
         if self.now > self.report_time:
             elapsed = self.now - self.start_time
             elapsed_str = str(elapsed).split('.')[0]
@@ -272,7 +307,7 @@ class CameraProducer(ImageProducer):
             t = m.group(1) if m is not None else ''
 
             # logging.info(f'# {os.uname()[1]}: CPU {psutil.cpu_percent()}%, mem {psutil.virtual_memory().percent}%, TEMP CPU: {temp:.1f}C GPU: {t}C')
-            logging.info(f'  - Elapsed: {elapsed_str} frames: {self.nframes} saved: {self.keepers} FPS: {FPS:.2f} Paused: {self.paused}')
+            logging.info(f'{elapsed_str} frames: {self.nframes} FPS: {FPS:.2f} Qout: {self.out_queue.qsize()}')
             self.report_time = self.report_time + self.report_wait
 
     def check_run_until(self):
@@ -304,7 +339,6 @@ class CameraProducer(ImageProducer):
         return True
 
     def preproduce(self):
-        self.now = datetime.now()
         if not self.check_run_until():
             logging.info(f'Run Until Check Failed')
             return False
@@ -320,12 +354,15 @@ class CameraProducer(ImageProducer):
             img = CameraImage(self.camera.capture(), prefix=self.prefix, type='png')
             logging.debug(f'captured {img.base_filename}')
             self.out_queue.put(img)
+            self.nframes += 1
 
 class ImageConsumer(PilapseThread):
-    def __init__(self, name:str, config:argparse.Namespace, in_queue:queue.Queue, shutdown_event:threading.Event):
-        super().__init__(shutdown_event, name=name)
-        self.config:argparse.Namespace = copy(config)
-        self.in_queue:Queue = in_queue
+    def __init__(self, name:str, shutdown_event:threading.Event, config:argparse.Namespace, **kwargs):
+        super(ImageConsumer, self).__init__(name, shutdown_event, config)
+        logging.debug(f'ImageConsumer init {self.name}')
+        self.in_queue:Queue = kwargs.get('in_queue')
+        if self.in_queue is None:
+           raise Exception(f'Creating Consumer thread {self.name} with no in queue')
         self._shutdown_event:threading.Event = shutdown_event
         self.nframes:int = 0
         self.keepers:int = 0
@@ -333,15 +370,14 @@ class ImageConsumer(PilapseThread):
         self.now:datetime = self.start_time
         self.paused:bool = False
 
-        self.report_wait = timedelta(seconds=30)
-        self.report_time = self.start_time + self.report_wait
-
         self.outdir:str = self.config.outdir
         if '%' in self.outdir:
             self.outdir = datetime.strftime(datetime.now(), self.config.outdir)
         os.makedirs(self.outdir, exist_ok=True)
 
         self.current_time = self.now
+
+        self.force_consume = False
 
     def set_outdir(self):
         if '%' in self.config.outdir and self.current_time.minute != self.now.minute:
@@ -376,43 +412,103 @@ class ImageConsumer(PilapseThread):
 
             d = shutil.disk_usage(self.outdir)
             disk_usage = d.used / d.total * 100.0
-            logging.info(f'# {os.uname()[1]}: CPU {psutil.cpu_percent()}%, mem {psutil.virtual_memory().percent}% disk: {disk_usage:.1f}% TEMP CPU: {temp:.1f}C GPU: {t}C')
-            logging.info(f'  - Elapsed: {elapsed_str} frames: {self.nframes} saved: {self.keepers} FPS: {FPS:.2f} Paused: {self.paused} Q: {self.in_queue.qsize()}')
+            logging.info(f'{os.uname()[1]}: CPU {psutil.cpu_percent()}%, mem {psutil.virtual_memory().percent}% disk: {disk_usage:.1f}% TEMP CPU: {temp:.1f}C GPU: {t}C')
+            logging.info(f'{elapsed_str} frames: {self.nframes} saved: {self.keepers} FPS: {FPS:.2f} Paused: {self.paused} Q: {self.in_queue.qsize()}')
             self.report_time = self.report_time + self.report_wait
 
+
+    def check_for_shutdown(self):
+        if self._shutdown_event.is_set():
+            logging.warning(f'shutdown event is set')
+            if self.in_queue.empty() or (self.config.nframes is not None and self.nframes >= self.config.nframes):
+                logging.info('Queue is empty. Shutting down')
+                return True
+            logging.warning(f'Trying to shutdown, but queue not empty: {self.in_queue.qsize()}')
+            self.force_consume = True
+        return False
+
+    def check_in_queue(self):
+        if not self.in_queue.empty():
+            logging.debug(f'In-Queue not empty {self}')
+            if self.preconsume() or self.force_consume:
+                image = self.in_queue.get()
+                self.consume_image(image)
+            else:
+                logging.debug(f'preconsume returned false.')
+
     def do_work(self) -> None:
-        self.start_time = datetime.now()
-        logging.info(f'Starting Motion Capture ({self.start_time.strftime("%Y/%m/%d %H:%M:%S")})')
-        logging.info(f'Config: {self.config}')
+        self.start_work()
+        logging.info(f'Starting ImageConsumer (do_work) ({self.start_time.strftime("%Y/%m/%d %H:%M:%S")})')
+        logging.debug(f'Config: {self.config}')
         self.paused = False if self.config.run_from is None else True
         force_consume = False
         while True:
+            # DUPLICATE IN ImageWriter
             # Have we received shutdown event?
-            if self._shutdown_event.is_set():
-                logging.warning(f'shutdown event is set')
-                if self.in_queue.empty() or (self.config.nframes is not None and self.nframes >= self.config.nframes):
-                    logging.info('Queue is empty. Shutting down')
-                    break
-                logging.warning(f'Trying to shutdown, but queue not empty: {self.in_queue.qsize()}')
-                force_consume = True
-
+            if self.check_for_shutdown():
+                break
             self.now = datetime.now()
             self.set_outdir()
 
             self.log_status()
-            if not self.in_queue.empty():
-                if self.preconsume() or force_consume:
-                    image = self.in_queue.get()
-                    self.consume_image(image)
-                else:
-                    logging.debug(f'preconsume returned false.')
+            self.check_in_queue()
 
     def consume_image(self, image):
-        logging.info(f'Consuming {image.filename}')
+        logging.error(f'Base class Consuming {image.filename} ({self}')
 
-class MotionConsumer(ImageConsumer):
-    def __init__(self, config:argparse.Namespace, in_queue:Queue, shutdown_event:threading.Event):
-        super().__init__('MotionConsumer', config, in_queue, shutdown_event)
+class ImageWriter(ImageConsumer):
+    def __init__(self, shutdown_event:threading.Event, config:argparse.Namespace, **kwargs):
+        super(ImageWriter, self).__init__('ImageWriter', shutdown_event, config, **kwargs)
+        logging.debug(f'ImageWriter init {self.name}')
+
+    def do_work(self) -> None:
+        self.start_work()
+        logging.info(f'Starting Image Writer (do_work for {self.name}) ({self.start_time.strftime("%Y/%m/%d %H:%M:%S")})')
+        while True:
+            # DUPLICATE IN ImageWriter
+            if self.check_for_shutdown():
+                break
+            self.now = datetime.now()
+            self.set_outdir()
+
+            self.log_status()
+            self.check_in_queue()
+
+    def consume_image(self, image):
+        logging.info(f'ImageWriter: writing {image.filepath}')
+        cv2.imwrite(image.filepath, image.image)
+        self.nframes += 1
+
+class ImagePipeline(ImageProducer, ImageConsumer):
+    def __init__(self, name:str, shutdown_event:threading.Event, config:argparse.Namespace,
+                 **kwargs):
+        super(ImagePipeline, self).__init__(name, shutdown_event, config, **kwargs)
+
+    def log_status(self):
+        if self.now > self.report_time:
+            elapsed = self.now - self.start_time
+            elapsed_str = str(elapsed).split('.')[0]
+            FPS = self.nframes / elapsed.total_seconds()
+
+            logging.info(f'{elapsed_str} frames: {self.nframes} FPS: {FPS:.2f} Qin: {self.in_queue.qsize()} Qout: {self.out_queue.qsize()}')
+            self.report_time = self.report_time + self.report_wait
+
+    def do_work(self) -> None:
+            self.start_work()
+            logging.info(f'Starting Image Pipeline (do_work for {self.name}) ({self.start_time.strftime("%Y/%m/%d %H:%M:%S")})')
+            while True:
+                if self.check_for_shutdown():
+                    break
+                self.now = datetime.now()
+                self.set_outdir()
+                self.log_status()
+                self.check_in_queue()
+
+
+class MotionPipeline(ImagePipeline):
+    def __init__(self, shutdown_event:threading.Event, config:argparse.Namespace, **kwargs):
+        super(MotionPipeline, self).__init__('MotionPipeline', shutdown_event, config, **kwargs)
+        logging.debug(f'MotionPipeline init {self.name}')
         self.current_image:Image = None
         self.previous_image:Image = None
         self.count:int = 0
@@ -495,7 +591,7 @@ class MotionConsumer(ImageConsumer):
         self.previous_image = self.current_image
         self.current_image = image
 
-        logging.debug(f'Consuming image: {image.filename}')
+        logging.debug(f'Consuming image: {image.filename}, Q in: {self.in_queue.qsize()}')
         fname_base = self.current_image.base_filename
         new_name = f'{fname_base}_90.{self.current_image.type}' if self.config.save_diffs else f'{fname_base}.{self.current_image.type}'
         new_name_motion = f'{fname_base}_90M.{self.current_image.type}'
@@ -528,7 +624,8 @@ class MotionConsumer(ImageConsumer):
                 path = os.path.join(self.outdir, new_name_motion)
                 path = path.replace('90M', '90MT')
                 logging.debug(f'Writing Test Image: {path}')
-                cv2.imwrite(path, copy)
+                self.add_to_out_queue(FileImage(path, image=copy))
+                # cv2.imwrite(path, copy)
         elif self.previous_image is not None and self.current_image is not None:
                 img_out, motion_detected = self.compare_images()
                 if motion_detected:
@@ -544,12 +641,15 @@ class MotionConsumer(ImageConsumer):
                     pl.annotate_frame(img_out, annotatation, self.config)
                     path = os.path.join(self.outdir, new_name)
                     logging.debug(f'Writing Motion frame: {path}')
-                    cv2.imwrite(path, img_out)
+                    self.add_to_out_queue(FileImage(path, image=img_out))
+                    # cv2.imwrite(path, img_out)
                 elif self.config.all_frames:
                     path = os.path.join(self.outdir, new_name)
                     logging.debug(f'Writing all frames: {path}')
                     pl.annotate_frame(self.current_image.image, annotatation, self.config)
-                    cv2.imwrite(path, self.current_image.image)
+                    self.add_to_out_queue(self.current_image)
+                    # cv2.imwrite(path, self.current_image.image)
+
 
     def compare_images(self):
         original = self.previous_image.image
@@ -571,7 +671,8 @@ class MotionConsumer(ImageConsumer):
                 blur_name = f'{fname_base}_00B.png'
                 path = os.path.join(self.outdir, blur_name)
                 logging.info(f'Saving {path}')
-                cv2.imwrite(path, new)
+                self.add_to_out_queue(FileImage(path, image=new))
+                # cv2.imwrite(path, new)
 
 
         scale = 1.0
@@ -604,7 +705,8 @@ class MotionConsumer(ImageConsumer):
             diff_name = f'{fname_base}_01D.png'
             path = os.path.join(self.outdir, diff_name)
             logging.debug(f'Saving: {path}')
-            cv2.imwrite(path, diff2)
+            self.add_to_out_queue(FileImage(path, image=diff2))
+            # cv2.imwrite(path, diff2)
 
         #converting the difference into grascale
         gray = cv2.cvtColor(diff, cv2.COLOR_BGR2GRAY)
@@ -615,7 +717,8 @@ class MotionConsumer(ImageConsumer):
             gray_name = f'{fname_base}_02G.png'
             path = os.path.join(self.outdir, gray_name)
             logging.debug(f'Saving: {path}')
-            cv2.imwrite(path, gray2)
+            self.add_to_out_queue(FileImage(path, image=gray2))
+            # cv2.imwrite(path, gray2)
 
         #increasing the size of differences so we can capture them all
         #for i in range(0, 3):
@@ -631,7 +734,8 @@ class MotionConsumer(ImageConsumer):
             dilated_name = f'{fname_base}_03D.png'
             path = os.path.join(self.outdir, dilated_name)
             logging.debug(f'Saving: {path}')
-            cv2.imwrite(path, dilated2)
+            self.add_to_out_queue(FileImage(path, image=dilated2))
+            # cv2.imwrite(path, dilated2)
 
         #threshold the gray image to binarise it. Anything pixel that has
         #value more than 3 we are converting to white
@@ -648,7 +752,8 @@ class MotionConsumer(ImageConsumer):
             thresh_name = f'{fname_base}_04T.png'
             path = os.path.join(self.outdir, thresh_name)
             logging.debug(f'Saving: {path}')
-            cv2.imwrite(path, thresh2)
+            self.add_to_out_queue(FileImage(path, image=thresh2))
+            # cv2.imwrite(path, thresh2)
 
         # thresh = cv2.bitwise_not(thresh)
         # now we need to find contours in the binarised image

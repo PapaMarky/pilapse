@@ -5,7 +5,7 @@ import time
 import pilapse as pl
 
 from threading import Event
-from threads import DirectoryProducer, MotionConsumer
+from threads import DirectoryProducer, MotionPipeline
 from queue import Queue
 
 path = sys.argv[1]
@@ -14,7 +14,7 @@ q = Queue()
 shutdown_event = Event()
 
 producer = DirectoryProducer(path, 'png', q, shutdown_event)
-consumer = MotionConsumer(q, shutdown_event)
+consumer = MotionPipeline(q, shutdown_event)
 
 producer.start()
 consumer.start()

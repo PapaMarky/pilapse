@@ -9,7 +9,7 @@ from camera import Camera
 from config import Config
 import pilapse as pl
 from queue import Queue
-from threads import DirectoryProducer, CameraProducer, MotionConsumer
+from threads import DirectoryProducer, CameraProducer, MotionPipeline, ImageWriter
 
 import cv2
 import imutils
@@ -321,7 +321,8 @@ class MotionDetectionApp():
 
         if not pl.it_is_time_to_die():
             self.process_config()
-            self._queue = Queue()
+            self.front_queue = Queue()
+            self.back_queue = Queue()
             self._shutdown_event = threading.Event()
 
 
@@ -375,18 +376,22 @@ class MotionDetectionApp():
         producer = None
         if self.source_dir:
             # load images from directory
-            producer = DirectoryProducer(self.source_dir, 'png', self._queue, self._shutdown_event)
+            producer = DirectoryProducer(self.source_dir, 'png', self._shutdown_event, self._config, self.front_queue)
         else:
             # create images using camera
-            producer = CameraProducer(self.width, self.height, self._config.zoom, self._config.prefix, self._config, self._queue, self._shutdown_event)
-        consumer = MotionConsumer(self._config, self._queue, self._shutdown_event)
+            producer = CameraProducer(self.width, self.height, self._config.zoom, self._config.prefix,
+                                      self._shutdown_event, self._config, out_queue=self.front_queue)
+        pipeline = MotionPipeline(self._shutdown_event, self._config, in_queue=self.front_queue, out_queue=self.back_queue)
+        writer = ImageWriter(self._shutdown_event, self._config, in_queue=self.back_queue)
 
-        consumer.start()
+        writer.start()
+        pipeline.start()
         producer.start()
 
         while True:
-            logging.debug(f'waiting: producer alive? {producer.is_alive()}, consumer alive? {consumer.is_alive()}')
-            if not consumer.is_alive() or not producer.is_alive():
+            logging.debug(f'waiting: producer alive? {producer.is_alive()}, consumer alive? '
+                          f'{pipeline.is_alive()} writer alive? {writer.is_alive()}')
+            if not producer.is_alive() or not pipeline.is_alive() or not writer.is_alive():
                 self._shutdown_event.set()
                 pl.set_time_to_die()
 
@@ -403,11 +408,19 @@ class MotionDetectionApp():
                 except Exception as e:
                     logging.exception(e)
 
-                logging.info('Waiting for consumer...')
+                logging.info('Waiting for pipeline...')
                 try:
-                    consumer.join(5.0)
-                    if consumer.is_alive():
-                        logging.warning('- Timed out, consumer is still alive.')
+                    pipeline.join(5.0)
+                    if pipeline.is_alive():
+                        logging.warning('- Timed out, pipeline is still alive.')
+                except Exception as e:
+                    logging.exception(e)
+
+                logging.info('Waiting for writer...')
+                try:
+                    writer.join(5.0)
+                    if writer.is_alive():
+                        logging.warning('- Timed out, writer is still alive.')
                 except Exception as e:
                     logging.exception(e)
 
@@ -427,7 +440,9 @@ def main():
         if not pl.it_is_time_to_die():
             app.run()
     except Exception as e:
+        logging.exception('Exception in Main')
         logging.exception(e)
+        pl.die(1)
 
 def oldmain():
     pl.create_pid_file()
