@@ -37,13 +37,17 @@ class Image():
 
     timestamp_pattern:str = '%Y%m%d_%H%M%S.%f'
     def __init__(self, path:str=None, image=None, type:str='png', prefix:str=f'frame',
-                 timestamp:datetime=datetime.now(), suffix=''):
+                 timestamp:datetime=None, suffix=''):
         self._path:str = path
         self._image:picamera.PiArrayOutput = image
         self._prefix:str = prefix
         self._type:str = type
-        self._timestamp:datetime = timestamp
+        self._timestamp:datetime = timestamp if timestamp is not None else datetime.now()
         self._suffix = suffix
+
+    def to_str(self):
+        return f'path: {self.filepath}, timefile: {self.timestamp_file} base: {self.base_filename} ' \
+               f'filename: {self.filename} type: {self.type}'
 
     @property
     def filepath(self) -> str:
@@ -268,16 +272,10 @@ class CameraProducer(ImageProducer):
         self.width:int = width
         self.height:int = height
         self.prefix:str = prefix
-        self.config:argparse.Namespace = copy(config)
         self.camera:Camera = Camera(width, height, zoom)
         self.nframes:int = 0
 
         self.paused:bool = False if self.config.run_from is None else True
-
-        if self.config.stop_at is not None:
-            logging.debug(f'Setting stop-at: {self.config.stop_at}')
-            (hour, minute, second) = self.config.stop_at.split(':')
-            self.config.stop_at = datetime.now().replace(hour=int(hour), minute=int(minute), second=int(second), microsecond=0)
 
         if self.config.run_from is not None:
             logging.debug(f'Setting run-until: {self.config.run_from}')
@@ -307,14 +305,15 @@ class CameraProducer(ImageProducer):
             t = m.group(1) if m is not None else ''
 
             # logging.info(f'# {os.uname()[1]}: CPU {psutil.cpu_percent()}%, mem {psutil.virtual_memory().percent}%, TEMP CPU: {temp:.1f}C GPU: {t}C')
-            logging.info(f'{elapsed_str} frames: {self.nframes} FPS: {FPS:.2f} Qout: {self.out_queue.qsize()}')
+            logging.info(f'{elapsed_str} frames: {self.nframes} FPS: {FPS:.2f} Qout: {self.out_queue.qsize()}, '
+                         f'Paused: {"T" if self.paused else "F"}')
             self.report_time = self.report_time + self.report_wait
 
     def check_run_until(self):
         # Manage run_from and run_until
         current_time = self.now.time()
         if self.config.run_until is not None and not self.paused:
-            logging.info(f'Run from {self.config.run_from} until {self.config.run_until}')
+            logging.debug(f'Run from {self.config.run_from} until {self.config.run_until}')
 
             if current_time >= self.config.run_until_t or current_time <= self.config.run_from_t:
                 logging.info(f'Pausing because outside run time: from {self.config.run_from} until {self.config.run_until}')
@@ -340,7 +339,7 @@ class CameraProducer(ImageProducer):
 
     def preproduce(self):
         if not self.check_run_until():
-            logging.info(f'Run Until Check Failed')
+            logging.debug(f'Run Until Check Failed')
             return False
 
         if not self.check_stop_at():
@@ -475,8 +474,10 @@ class ImageWriter(ImageConsumer):
             self.check_in_queue()
 
     def consume_image(self, image):
-        logging.info(f'ImageWriter: writing {image.filepath}')
-        cv2.imwrite(image.filepath, image.image)
+        if isinstance(image, CameraImage):
+            path = os.path.join(self.outdir, image.filename)
+        logging.debug(f'ImageWriter: writing %s', path)
+        cv2.imwrite(path, image.image)
         self.nframes += 1
 
 class ImagePipeline(ImageProducer, ImageConsumer):
