@@ -1,7 +1,10 @@
 #! /usr/bin/env python3
 
 import argparse
+import threading
 from datetime import datetime, timedelta
+from queue import Queue
+
 from camera import Camera
 
 from config import Config
@@ -13,6 +16,9 @@ import os
 import sys
 import time
 import pause
+
+from threads import CameraProducer, ImageWriter
+
 
 def BGR(r, g, b):
     return (b, g, r)
@@ -41,19 +47,20 @@ class TimelapseConfig(Config):
         frame = parser.add_argument_group('Frame Setup', 'Parameters that control the generated frames')
         frame.add_argument('--width', '-W', type=int, help='width of each frame', default=640)
         frame.add_argument('--height', '-H', type=int, help='height of each frame', default=480)
-        frame.add_argument('--show-name', action='store_true',
-                           help='Write the file name (timestamp) on each frame')
-        frame.add_argument('--label-rgb', type=str,
-                           help='Set the color of the timestamp on each frame. '
-                                'FORMAT: comma separated integers between 0 and 255, no spaces "R,G,B" ')
+        frame.add_argument('--zoom', type=float, help='Zoom factor. Must be greater than 1.0', default=1.0)
         frame.add_argument('--outdir', type=str,
                            help='directory where frame files will be written.',
                            default='./%Y%m%d')
-        frame.add_argument('--prefix', type=str, default='snap',
+        frame.add_argument('--prefix', type=str, default='motion',
                            help='Prefix frame filenames with this string')
+        frame.add_argument('--show-name', action='store_true',
+                           help='Write a timestamp on each frame')
+        frame.add_argument('--label-rgb', type=str,
+                           help='Set the color of the timestamp on each frame. '
+                                'FORMAT: comma separated integers between 0 and 255, no spaces EX: "R,G,B" ')
 
         timelapse = parser.add_argument_group('Timelapse', 'Parameters that control timelapse')
-        timelapse.add_argument('--framerate', type=int, default=None,
+        timelapse.add_argument('--framerate', type=float, default=None,
                                help='When "all-frames" is set, "framerate" limits how often a new frame is taken. '
                                     'Int value. Units is seconds. EX. Setting framerate to "3" will take a frame every'
                                     '3 seconds. Defaults to 0 which means "as fast as you can" ')
@@ -84,7 +91,7 @@ class TimelapseConfig(Config):
         self.dump_to_log(config)
 
         if config.save_config:
-            config_file = 'motion-config.json'
+            config_file = 'timelapse-config.json'
             logging.info(f'Saving config to {config_file}')
             config.save_config = False
             with open(config_file, 'w') as json_file:
@@ -99,33 +106,140 @@ class TimelapseConfig(Config):
             logging.info(f'Setting log level from {oldlevel} to {level}')
             logging.getLogger().setLevel(level)
 
-        if '%' in config.outdir:
-            config.outdir = datetime.strftime(datetime.now(), config.outdir)
-        os.makedirs(config.outdir, exist_ok=True)
+        if config.stop_at is not None and (config.run_from is not None or config.run_until is not None):
+            print(f'If stop-at is set, run-until and run-from cannot be set')
+            return None
 
+        logging.info(f'stop_at: {config.stop_at}')
         if config.stop_at is not None:
             logging.debug(f'Setting stop-at: {config.stop_at}')
             (hour, minute, second) = config.stop_at.split(':')
             config.stop_at = datetime.now().replace(hour=int(hour), minute=int(minute), second=int(second), microsecond=0)
 
-        if config.run_from is not None:
-            logging.debug(f'Setting run_from: {config.run_from}')
-            config.__dict__['run_from_t'] = datetime.strptime(config.run_from, '%H:%M:%S').time()
-
-        if config.run_until is not None:
-            logging.debug(f'Setting run-until: {config.run_until}')
-            config.__dict__['run_until_t'] = datetime.strptime(config.run_until, '%H:%M:%S').time()
-
-        if config.framerate is not None:
-            config.framerate_delta = timedelta(seconds=config.framerate)
-
-        if config.label_rgb is not None:
-            (R,G,B) = config.label_rgb.split(',')
-            config.label_rgb = BGR(int(R), int(G), int(B))
+        if config.run_from is not None or config.run_until is not None:
+            # if either are set, both must be set.
+            if config.run_from is None or config.run_until is None:
+                print('if either run-from or run-until are set, both must be set')
+                return None
 
         return config
+class TimelapseApp():
+    def __init__(self):
+        self._config_loader = TimelapseConfig()
+        self._config = self._config_loader.load_from_list()
+
+        if self._config is None:
+            raise Exception('Bad config')
+
+        # placeholders for all the valid parameters
+        self.width = self._config.width
+        self.height = self._config.height
+        self.outdir = self._config.outdir
+        self.prefix = self._config.prefix
+        self.show_name = self._config.show_name
+        self.label_rgb = self._config.label_rgb
+        self.stop_at = self._config.stop_at
+        self.run_from = self._config.run_from
+        self.run_until = self._config.run_until
+        self.nframes = self._config.nframes
+        self.loglevel = self._config.loglevel
+        self.save_config = self._config.save_config
+        self.debug = self._config.debug
+        self.testframe = self._config.testframe
+
+        if not pl.it_is_time_to_die():
+            self.process_config()
+            self.out_queue = Queue()
+            self._shutdown_event = threading.Event()
+
+    def process_config(self):
+
+        for k, v in self._config.__dict__.items():
+            if k not in self.__dict__:
+                logging.warning(f'Config attribute missing: {k}, config: {v}')
+            self.__dict__[k] = v
+
+        if self._config.zoom < 1.0:
+            msg = f'Zoom must be 1.0 or greater. (set to: {self._config.zoom})'
+            sys.stderr.write(msg + '\n')
+            logging.error(msg)
+            pl.die()
+
+        if self.run_from is not None:
+            logging.debug(f'Setting run-until: {self.run_from}')
+            self.__dict__['run_from_t'] = datetime.strptime(self.run_from, '%H:%M:%S').time()
+
+        if self.run_until is not None:
+            logging.debug(f'Setting run-until: {self.run_until}')
+            self.__dict__['run_until_t'] = datetime.strptime(self.run_until, '%H:%M:%S').time()
+
+        if self.label_rgb is not None:
+            (R,G,B) = self.label_rgb.split(',')
+            self.label_rgb = BGR(int(R), int(G), int(B))
+
+    def run(self):
+        if pl.it_is_time_to_die():
+            return
+        ###
+        # Create a Motion Consumer and Image Producer. Start them up.
+
+        producer = None
+        # create images using camera
+        producer = CameraProducer(self.width, self.height, self._config.zoom, self._config.prefix,
+                                  self._shutdown_event, self._config, out_queue=self.out_queue)
+        writer = ImageWriter(self._shutdown_event, self._config, in_queue=self.out_queue)
+
+        writer.start()
+        producer.start()
+
+        while True:
+            logging.debug(f'waiting: producer alive? {producer.is_alive()},  writer alive? {writer.is_alive()}')
+            if not producer.is_alive() or not writer.is_alive():
+                self._shutdown_event.set()
+                pl.set_time_to_die()
+
+            if pl.it_is_time_to_die():
+                logging.info('Shutting down')
+                self._shutdown_event.set()
+                break
+
+                logging.info('Waiting for producer...')
+                try:
+                    producer.join(5.0)
+                    if producer.is_alive():
+                        logging.warning('- Timed out, producer is still alive.')
+                except Exception as e:
+                    logging.exception(e)
+
+                logging.info('Waiting for writer...')
+                try:
+                    writer.join(5.0)
+                    if writer.is_alive():
+                        logging.warning('- Timed out, writer is still alive.')
+                except Exception as e:
+                    logging.exception(e)
+
+                break
+            now = datetime.now()
+            if self.stop_at and now > self.stop_at:
+                logging.info(f'Shutting down due to "stop_at": {self.stop_at.strftime("%Y/%m/%d %H:%M:%S")}')
+                pl.die()
+            time.sleep(1)
+        pl.die()
 
 def main():
+    try:
+        if not pl.create_pid_file():
+            pl.die()
+        app = TimelapseApp()
+        if not pl.it_is_time_to_die():
+            app.run()
+    except Exception as e:
+        logging.exception('Exception in Main')
+        logging.exception(e)
+        pl.die(1)
+
+def oldmain():
     logging.info(f' --- Starting {pl.get_program_name()} ---')
     if not pl.create_pid_file():
         print(f'{pl.get_program_name()} might be running already. '

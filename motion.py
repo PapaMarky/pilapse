@@ -4,12 +4,11 @@ import argparse
 import json
 import threading
 from datetime import datetime, timedelta
-from camera import Camera
 
 from config import Config
 import pilapse as pl
 from queue import Queue
-from threads import DirectoryProducer, CameraProducer, MotionConsumer
+from threads import DirectoryProducer, MotionPipeline, ImageWriter
 
 import cv2
 import imutils
@@ -111,7 +110,6 @@ class MotionConfig(Config):
 
     def load_from_list(self, arglist=None):
         logging.info('loading MOTION config from list:')
-        logging.info(arglist)
         config = super().load_from_list(arglist=arglist)
         self.dump_to_log(config)
 
@@ -141,147 +139,6 @@ class MotionConfig(Config):
                 print('if either run-from or run-until are set, both must be set')
                 return None
         return config
-
-
-
-# based on this:
-# https://codedeepai.com/finding-difference-between-multiple-images-using-opencv-and-python/
-def compare_images(original, new, config, fname_base):
-    # original = cv2.cvtColor(original, cv2.COLOR_BGR2GRAY)
-    # new = cv2.cvtColor(new, cv2.COLOR_BGR2GRAY)
-
-    #resize the images to make them smaller. Bigger image may take a significantly
-    #more computing power and time
-    motion_detected = False
-    image_in = new.copy()
-    scale = 1.0
-    if config.shrinkto is not None:
-        scale  = config.height / config.shrinkto
-        original = imutils.resize(original.copy(), height = config.shrinkto)
-        new = imutils.resize(new.copy(), height = config.shrinkto)
-
-    sMindiff = int(config.mindiff / scale)
-    sLeft = int(config.left / scale)
-    sRight = int(config.right / scale)
-    sTop = int(config.top / scale)
-    sBottom = int(config.bottom / scale)
-
-    #make a copy of original image so that we can store the
-    #difference of 2 images in the same
-    height, width = (config.height, config.width)
-    oheight, owidth = (config.height, config.width)
-
-    if height != oheight or width != owidth:
-        logging.warning(f'SIZE MISSMATCH: original: {owidth} x {oheight}, new: {width} x {height}')
-        return 0
-
-    diff = original.copy()
-    cv2.absdiff(original, new, diff)
-    # 01 - diff
-    if config.save_diffs and False:
-        diff2 = diff.copy()
-        diff2 = imutils.resize(diff2, config.height)
-        diff_name = f'{fname_base}_01D.png'
-        path = os.path.join(config.outdir, diff_name)
-        logging.debug(f'Saving: {path}')
-        cv2.imwrite(path, diff2)
-
-    #converting the difference into grascale
-    gray = cv2.cvtColor(diff, cv2.COLOR_BGR2GRAY)
-    # 02 - gray
-    if config.save_diffs:
-        gray2 = gray.copy()
-        gray2 = imutils.resize(gray2, config.height)
-        gray_name = f'{fname_base}_02G.png'
-        path = os.path.join(config.outdir, gray_name)
-        logging.debug(f'Saving: {path}')
-        cv2.imwrite(path, gray2)
-
-    #increasing the size of differences so we can capture them all
-    #for i in range(0, 3):
-    dilated = gray.copy()
-    #for i in range(0, 3):
-    #    dilated = cv2.dilate(dilated, None, iterations= i+ 1)
-
-    dilated = cv2.dilate(dilated, None, iterations= config.dilation)
-    # 03 - dilated
-    if config.save_diffs:
-        dilated2 = dilated.copy()
-        dilated2 = imutils.resize(dilated2, config.height)
-        dilated_name = f'{fname_base}_03D.png'
-        path = os.path.join(config.outdir, dilated_name)
-        logging.debug(f'Saving: {path}')
-        cv2.imwrite(path, dilated2)
-
-    #threshold the gray image to binarise it. Anything pixel that has
-    #value more than 3 we are converting to white
-    #(remember 0 is black and 255 is absolute white)
-    #the image is called binarised as any value less than 3 will be 0 and
-    # all values equal to and more than 3 will be 255
-    # (T, thresh) = cv2.threshold(dilated, 3, 255, cv2.THRESH_BINARY)
-    (T, thresh) = cv2.threshold(dilated, config.threshold, 255, cv2.THRESH_BINARY)
-
-    # 04 - threshed
-    if config.save_diffs:
-        thresh2 = thresh.copy()
-        thresh2 = imutils.resize(thresh2, config.height)
-        thresh_name = f'{fname_base}_04T.png'
-        path = os.path.join(config.outdir, thresh_name)
-        logging.debug(f'Saving: {path}')
-        cv2.imwrite(path, thresh2)
-
-    # thresh = cv2.bitwise_not(thresh)
-    # now we need to find contours in the binarised image
-    # cnts = cv2.findContours(thresh, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
-    cnts = cv2.findContours(thresh, cv2.RETR_LIST, cv2.CHAIN_APPROX_TC89_L1)
-    cnts = imutils.grab_contours(cnts)
-
-    copy = None
-    def get_copy(copy):
-        if copy is None:
-            copy = new.copy()
-        return copy
-
-    # logging.debug(f'NEW SHAPE: {new.shape}')
-    height, width, _ = new.shape
-    if config.debug:
-        copy = get_copy(image_in)
-        cv2.rectangle(image_in, (0, config.top), (int(scale * width), config.bottom), RED)
-    for c in cnts:
-        # fit a bounding box to the contour
-        (x, y, w, h) = cv2.boundingRect(c)
-        sx = int(scale * x)
-        sy = int(scale * y)
-        sw = int(scale * w)
-        sh = int(scale * h)
-
-        if x + w > sRight:
-            if config.debug:
-                cv2.rectangle(copy, (sx, sy), (sx + sw, sy + sh), CYAN)
-            continue
-        if x < sLeft:
-            if config.debug:
-                cv2.rectangle(copy, (sx, sy), (sx + sw, sy + sh), CYAN)
-            continue
-        if y < sTop:
-            if config.debug:
-                cv2.rectangle(copy, (sx, sy), (sx + sw, sy + sh), CYAN)
-            continue
-        if y + h > sBottom:
-            if config.debug:
-                cv2.rectangle(copy, (sx, sy), (sx + sw, sy + sh), CYAN)
-            continue
-        if (w >= sMindiff or h >= sMindiff) and w < width and h < height:
-            copy = get_copy(copy)
-            if config.debug or config.show_motion:
-                cv2.rectangle(copy, (sx, sy), (sx + sw, sy + sh), GREEN)
-            motion_detected = True
-        else:
-            if config.debug:
-                copy = get_copy(copy)
-                cv2.rectangle(copy, (sx, sy), (sx + sw, sy + sh), MAGENTA)
-
-    return copy, motion_detected
 
 class MotionDetectionApp():
     def __init__(self):
@@ -321,7 +178,8 @@ class MotionDetectionApp():
 
         if not pl.it_is_time_to_die():
             self.process_config()
-            self._queue = Queue()
+            self.front_queue = Queue()
+            self.back_queue = Queue()
             self._shutdown_event = threading.Event()
 
 
@@ -375,18 +233,23 @@ class MotionDetectionApp():
         producer = None
         if self.source_dir:
             # load images from directory
-            producer = DirectoryProducer(self.source_dir, 'png', self._queue, self._shutdown_event)
+            producer = DirectoryProducer(self.source_dir, 'png', self._shutdown_event, self._config, out_queue=self.front_queue)
         else:
             # create images using camera
-            producer = CameraProducer(self.width, self.height, self._config.zoom, self._config.prefix, self._config, self._queue, self._shutdown_event)
-        consumer = MotionConsumer(self._config, self._queue, self._shutdown_event)
+            from camera_producer import CameraProducer
+            producer = CameraProducer(self.width, self.height, self._config.zoom, self._config.prefix,
+                                      self._shutdown_event, self._config, out_queue=self.front_queue)
+        pipeline = MotionPipeline(self._shutdown_event, self._config, in_queue=self.front_queue, out_queue=self.back_queue)
+        writer = ImageWriter(self._shutdown_event, self._config, in_queue=self.back_queue)
 
-        consumer.start()
+        writer.start()
+        pipeline.start()
         producer.start()
 
         while True:
-            logging.debug(f'waiting: producer alive? {producer.is_alive()}, consumer alive? {consumer.is_alive()}')
-            if not consumer.is_alive() or not producer.is_alive():
+            logging.debug(f'waiting: producer alive? {producer.is_alive()}, consumer alive? '
+                          f'{pipeline.is_alive()} writer alive? {writer.is_alive()}')
+            if not producer.is_alive() or not pipeline.is_alive() or not writer.is_alive():
                 self._shutdown_event.set()
                 pl.set_time_to_die()
 
@@ -403,11 +266,19 @@ class MotionDetectionApp():
                 except Exception as e:
                     logging.exception(e)
 
-                logging.info('Waiting for consumer...')
+                logging.info('Waiting for pipeline...')
                 try:
-                    consumer.join(5.0)
-                    if consumer.is_alive():
-                        logging.warning('- Timed out, consumer is still alive.')
+                    pipeline.join(5.0)
+                    if pipeline.is_alive():
+                        logging.warning('- Timed out, pipeline is still alive.')
+                except Exception as e:
+                    logging.exception(e)
+
+                logging.info('Waiting for writer...')
+                try:
+                    writer.join(5.0)
+                    if writer.is_alive():
+                        logging.warning('- Timed out, writer is still alive.')
                 except Exception as e:
                     logging.exception(e)
 
@@ -427,114 +298,9 @@ def main():
         if not pl.it_is_time_to_die():
             app.run()
     except Exception as e:
+        logging.exception('Exception in Main')
         logging.exception(e)
-
-def oldmain():
-    pl.create_pid_file()
-
-    motion_config = MotionConfig()
-
-    logging.info(f'Loading command line parameters')
-    config = motion_config.load_from_list()
-    motion_config.dump_to_log(config)
-
-
-    #config = process_config(config)
-    if config is None:
         pl.die(1)
-
-    logging.debug(f'CMD: {" ".join(sys.argv)}')
-    motion_config.dump_to_log(config)
-
-    camera = Camera(config)
-    original = None
-    orig_name = ''
-    new = None
-    new_name = ''
-
-    nframes = 0
-    keepers = 0
-    start_time = datetime.now()
-    logging.info(f'Starting Motion Capture ({start_time.strftime("%Y/%m/%d %H:%M:%S")})')
-    paused = False if config.run_from is None else True
-    while not pl.it_is_time_to_die():
-        now = datetime.now()
-        if config.run_until is not None and not paused:
-            if now.time() >= config.run_until_t:
-                logging.info(f'Pausing because run_until: {config.run_until}')
-                paused = True
-
-        if paused:
-            if now.time() <= config.run_from_t:
-                logging.info(f'Ending pause because run_from: {config.run_from}')
-                paused = False
-
-        if paused:
-            time.sleep(1)
-
-        if config.nframes and nframes > config.nframes:
-            logging.info(f'Reached limit ({config.nframes} frames). Stopping.')
-            break
-        if nframes > 0 and nframes % 100 == 0:
-            elapsed = now - start_time
-            FPS = nframes / elapsed.total_seconds()
-            with open('/sys/class/thermal/thermal_zone0/temp') as f:
-                temp = int(f.read().strip()) / 1000
-            logging.info(f'Elapsed: {elapsed}, {nframes} frames. {keepers} saved. FPS = {FPS:5.2f} CPU Temp {temp}c')
-        nframes += 1
-        if config.stop_at and now > config.stop_at:
-            logging.info(f'Shutting down due to "stop_at": {config.stop_at.strftime("%Y/%m/%d %H:%M:%S")}')
-            pl.die()
-        ts = now.strftime('%Y%m%d_%H%M%S.%f')
-        fname_base = f'{config.prefix}_{ts}'
-        new_name = f'{fname_base}_90.png' if config.save_diffs else f'{fname_base}.png'
-        new_name_motion = f'{fname_base}_90M.png'
-        ats = now.strftime('%Y/%m/%d %H:%M:%S')
-        annotatation = f'{ats}' if config.show_name else None
-        img_file_name = 'frame.png'
-        new = camera.capture()
-
-        if new is not None and original is None:
-            if config.testframe:
-                copy = new.copy()
-                w = config.width
-                h = config.height
-                for n in range(0, 10):
-                    y = int(h * n / 10)
-                    x = int(w * n / 10)
-                    color = RED if y < config.top or y > config.bottom else GREEN
-                    cv2.line(copy, (0, y), (w, y), color)
-                    color = RED if x < config.left else GREEN
-                    cv2.line(copy, (x, 0), (x, h), color)
-                cv2.line(copy, (0, config.top), (config.width, config.top), ORANGE)
-                cv2.line(copy, (0, config.bottom), (config.width, config.bottom), ORANGE)
-                cv2.rectangle(copy, (100, 100), (100 + config.mindiff, 100 + config.mindiff), WHITE)
-
-                logging.info(f'TEST IMAGE: {new_name_motion}, top: {config.top}, bottom: {config.bottom}, left: {config.left}')
-                pl.annotate_frame(copy, annotatation, config)
-                cv2.imwrite(os.path.join(config.outdir, new_name_motion), copy)
-
-        elif original is not None and new is not None:
-            copy, motion_detected = compare_images(original, new, config, fname_base)
-
-            if motion_detected:
-                new_name = new_name_motion
-                logging.info(f'MOTION DETECTED')
-
-            if isinstance(copy, int):
-                logging.info(f'Original: {orig_name}')
-                logging.info(f'     New: {new_name}')
-            elif copy is not None:
-                logging.debug(f'{new_name}')
-                keepers += 1
-                pl.annotate_frame(copy, annotatation, config)
-                cv2.imwrite(os.path.join(config.outdir, new_name), copy)
-            elif config.all_frames:
-                logging.debug(f'{new_name}')
-                pl.annotate_frame(new, annotatation, config)
-                cv2.imwrite(os.path.join(config.outdir, new_name), new)
-        original = new
-        orig_name = new_name
 
 if __name__ == '__main__':
     try:
