@@ -4,12 +4,11 @@ import argparse
 import json
 import threading
 from datetime import datetime, timedelta
-from camera import Camera
 
 from config import Config
 import pilapse as pl
 from queue import Queue
-from threads import DirectoryProducer, CameraProducer, MotionPipeline, ImageWriter
+from threads import DirectoryProducer, MotionPipeline, ImageWriter
 
 import cv2
 import imutils
@@ -234,9 +233,10 @@ class MotionDetectionApp():
         producer = None
         if self.source_dir:
             # load images from directory
-            producer = DirectoryProducer(self.source_dir, 'png', self._shutdown_event, self._config, self.front_queue)
+            producer = DirectoryProducer(self.source_dir, 'png', self._shutdown_event, self._config, out_queue=self.front_queue)
         else:
             # create images using camera
+            from camera_producer import CameraProducer
             producer = CameraProducer(self.width, self.height, self._config.zoom, self._config.prefix,
                                       self._shutdown_event, self._config, out_queue=self.front_queue)
         pipeline = MotionPipeline(self._shutdown_event, self._config, in_queue=self.front_queue, out_queue=self.back_queue)
