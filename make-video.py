@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import argparse
 import glob
 import os
 import sys
@@ -6,19 +7,29 @@ import sys
 import cv2
 from datetime import datetime
 
+
+def parse_args():
+    parser = argparse.ArgumentParser('Make a directory full of images into a video')
+
+    parser.add_argument('--fps', type=int,
+                        help='Frames Per Second of video. (default: 24)',
+                        default=24)
+    parser.add_argument('--type', help='type of image file (extension: png, jpg, etc)')
+    parser.add_argument('--output', help='name / path of output file: default: "output.mov"', default='output.mov')
+    parser.add_argument('imgdir', help='path to directory holding images')
+    return parser.parse_args()
+
 print(sys.argv)
 
-if len(sys.argv) < 2:
-    print(f'USAGE: {sys.argv[0]} DIRECTORY_PATH')
-    sys.exit(1)
+config = parse_args()
 
-IMAGE_DIR = sys.argv[1]
+IMAGE_DIR = config.imgdir
 
 if not os.path.isdir(IMAGE_DIR):
     print(f'image dir does not exist or is not a directory.')
     sys.exit(1)
 
-filelist = glob.glob(os.path.join(IMAGE_DIR, '*.png') )
+filelist = glob.glob(os.path.join(IMAGE_DIR, f'*.{config.type}') )
 filelist.sort()
 
 if len(filelist) < 1:
@@ -38,11 +49,12 @@ img1 = None
 #video = cv2.VideoWriter('video.avi', fourcc, 1, (width, height))
 
 
-fps = 24
+fps = config.fps
+
 capSize = (width,height) # this is the size of my source video
 fourcc = cv2.VideoWriter_fourcc('m', 'p', '4', 'v') # note the lower case
 video = cv2.VideoWriter()
-success = video.open('output.mov',fourcc,fps,capSize,True)
+success = video.open(config.output,fourcc,fps,capSize,True)
 
 start = datetime.now()
 count = 0
