@@ -309,6 +309,8 @@ class ImageConsumer(PilapseThread):
             elapsed_str = str(elapsed).split('.')[0]
             FPS = self.nframes / elapsed.total_seconds()
             thermal_temp_file = '/sys/class/thermal/thermal_zone0/temp'
+            temp = '-'
+            t = '--'
             if os.path.exists(thermal_temp_file):
                 with open(thermal_temp_file) as f:
                     temp = int(f.read().strip()) / 1000
@@ -317,8 +319,6 @@ class ImageConsumer(PilapseThread):
                 r = r'^temp=([.0-9]+)'
                 m = re.match(r, t)
                 t = m.group(1) if m is not None else ''
-            temp = 0
-            t = 'XX'
             d = shutil.disk_usage(self.outdir)
             disk_usage = d.used / d.total * 100.0
             logging.info(f'{os.uname()[1]}: CPU {psutil.cpu_percent()}%, mem {psutil.virtual_memory().percent}% disk: {disk_usage:.1f}% TEMP CPU: {temp:.1f}C GPU: {t}C')

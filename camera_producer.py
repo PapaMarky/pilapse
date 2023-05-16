@@ -4,10 +4,13 @@ import re
 import subprocess
 import threading
 
+import pause
+
 from camera import Camera
 from threads import ImageProducer, CameraImage
 
-from datetime import datetime, time
+from datetime import datetime, timedelta
+import time
 
 
 class CameraProducer(ImageProducer):
@@ -26,8 +29,17 @@ class CameraProducer(ImageProducer):
         self.prefix:str = prefix
         self.camera:Camera = Camera(width, height, zoom)
         self.nframes:int = 0
+        if self.config.framerate:
+            self.config.framerate_delta = timedelta(seconds=config.framerate)
+
+        self.nextframe_time = self.now
 
         self.paused:bool = False if self.config.run_from is None else True
+
+        if self.config.stop_at is not None:
+            logging.debug(f'Setting stop-at: {self.config.stop_at}')
+            (hour, minute, second) = self.config.stop_at.split(':')
+            self.config.stop_at = datetime.now().replace(hour=int(hour), minute=int(minute), second=int(second), microsecond=0)
 
         if self.config.run_from is not None:
             logging.debug(f'Setting run-until: {self.config.run_from}')
@@ -99,10 +111,27 @@ class CameraProducer(ImageProducer):
             self.shutdown_event.set()
             return False
 
+        if self.config.nframes is not None and self.nframes > self.config.nframes:
+            logging.info(f'nframes ({self.config.nframes}) from config exceeded. Stopping.')
+            self.shutdown_event.set()
+            return False
+
         return True
     def produce_image(self) -> str:
         if not self.shutdown_event.is_set():
+            if self.out_queue.full():
+                logging.warning('Output Queue is full')
+                time.sleep(0.001)
+                return
             img = CameraImage(self.camera.capture(), prefix=self.prefix, type='png')
             logging.debug(f'captured {img.base_filename}')
             self.out_queue.put(img)
             self.nframes += 1
+
+            if self.config.framerate:
+                logging.debug(f'now: {self.now}, delta: {self.config.framerate_delta}')
+                self.nextframe_time = self.now + self.config.framerate_delta
+                logging.debug(f'nextframe_time: {self.nextframe_time}')
+                if self.config.debug:
+                    logging.info(f'Pausing until {self.nextframe_time} (framerate:{self.config.framerate})')
+                pause.until(self.nextframe_time)

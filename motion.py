@@ -79,6 +79,10 @@ class MotionConfig(Config):
         frame.add_argument('--source-dir', type=str,
                            help='If source-dir is set, image files will be loaded from a directory instead of '
                                 'the camera')
+        frame.add_argument('--framerate', type=float, default=None,
+                               help='When "all-frames" is set, "framerate" limits how often a new frame is taken. '
+                                    'Int value. Units is seconds. EX. Setting framerate to "3" will take a frame every'
+                                    '3 seconds. Defaults to 0 which means "as fast as you can" ')
 
         timing = parser.add_argument_group('Timing', 'Control when capture starts / stops')
         timing.add_argument('--stop-at', type=str,

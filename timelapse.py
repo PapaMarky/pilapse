@@ -17,7 +17,8 @@ import sys
 import time
 import pause
 
-from threads import CameraProducer, ImageWriter
+from threads import ImageWriter
+from camera_producer import CameraProducer
 
 
 def BGR(r, g, b):
