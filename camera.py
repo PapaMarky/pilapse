@@ -6,6 +6,7 @@ import time
 from picamera.array import PiRGBArray
 from picamera import PiCamera
 
+
 class Camera():
     def __init__(self,
                  width, height,
@@ -30,7 +31,6 @@ class Camera():
         self.camera = PiCamera(sensor_mode=self._sensor_mode,
                                framerate_range=(1/10, 40),
                                resolution=(width,height))
-
         modes = []
         for m in PiCamera.EXPOSURE_MODES:
             modes.append(m)
@@ -44,6 +44,7 @@ class Camera():
             modes.append(m)
         logging.info(f'meter modes: {modes}')
 
+        logging.info('Setting up camera...')
         s = 1.0 / zoom
         p0 = 0.5 - s/2
         p1 = 0.5 + s/2
@@ -64,6 +65,8 @@ class Camera():
         logging.info(f' - aspect ratio: {aspect_ratio}')
         logging.info(f' -         zoom: {zoom}')
         logging.info(f' -     rotation: {rotation}')
+        logging.info(f'setup_camera completed: Camera Resolution: {self.camera.MAX_RESOLUTION}')
+        logging.info(f' Model: {self.model()}, Zoom: {self.zoom_str()}')
 
     @property
     def picamera(self):
