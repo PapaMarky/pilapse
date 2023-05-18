@@ -83,8 +83,14 @@ class NightCam:
         logging.info(f'running camera...')
         self.running = True
         frame_time = datetime.timedelta(seconds=self.config.sleep)
+        quiting_time = datetime.datetime.now() + datetime.timedelta(days=1)
+        # shutdown at 7 am tomorrow
+        quiting_time.replace(hour=7, minute=0, second=0, microsecond=0)
         while self.running:
             start_time = datetime.datetime.now()
+            if start_time >= quiting_time:
+                self.stop_running()
+                break
             if start_time.day != self.start_time.day:
                 self.load_suntimes()
                 self.start_time = start_time

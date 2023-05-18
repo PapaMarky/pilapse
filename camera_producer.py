@@ -36,7 +36,7 @@ class CameraProducer(ImageProducer):
 
         self.paused:bool = False if self.config.run_from is None else True
 
-        if self.config.stop_at is not None:
+        if self.config.stop_at is not None and isinstance(self.config.stop_at, str):
             logging.debug(f'Setting stop-at: {self.config.stop_at}')
             (hour, minute, second) = self.config.stop_at.split(':')
             self.config.stop_at = datetime.now().replace(hour=int(hour), minute=int(minute), second=int(second), microsecond=0)
@@ -49,7 +49,7 @@ class CameraProducer(ImageProducer):
             logging.debug(f'Setting run-until: {self.config.run_until}')
             self.config.run_until_t = datetime.strptime(self.config.run_until, '%H:%M:%S').time()
 
-        time.sleep(2) # this is really so the camera can warm up
+        time.sleep(10) # this is really so the camera can warm up
 
     def get_camera_model(self):
         return self.camera.model()

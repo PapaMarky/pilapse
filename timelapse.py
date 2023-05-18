@@ -221,10 +221,6 @@ class TimelapseApp():
                     logging.exception(e)
 
                 break
-            now = datetime.now()
-            if self.stop_at and now > self.stop_at:
-                logging.info(f'Shutting down due to "stop_at": {self.stop_at.strftime("%Y/%m/%d %H:%M:%S")}')
-                pl.die()
             time.sleep(1)
         pl.die()
 
