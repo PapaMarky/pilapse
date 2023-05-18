@@ -9,6 +9,7 @@ from config import Config
 import pilapse as pl
 from queue import Queue
 from threads import DirectoryProducer, MotionPipeline, ImageWriter
+from scheduling import Schedule
 
 import cv2
 import imutils
@@ -84,15 +85,8 @@ class MotionConfig(Config):
                                     'Int value. Units is seconds. EX. Setting framerate to "3" will take a frame every'
                                     '3 seconds. Defaults to 0 which means "as fast as you can" ')
 
-        timing = parser.add_argument_group('Timing', 'Control when capture starts / stops')
-        timing.add_argument('--stop-at', type=str,
-                             help='Stop loop when time reaches "stop-at". Format: HH:MM:SS with HH in 24 hour format')
-        timing.add_argument('--run-from', type=str,
-                             help='Only run after this time of day. (Format: HH:MM:SS with HH in 24 hour format)')
-        timing.add_argument('--run-until', type=str,
-                             help='Only run until this time of day. (Format: HH:MM:SS with HH in 24 hour format)')
-        timing.add_argument('--nframes', type=int,
-                             help='Stop after writing this many frames. (useful for testing setup)')
+        # TODO: Should camera producer have an "add_arguents" function since it owns the Schedule object?
+        parser = Schedule.add_arguments(parser, 'Timing')
 
         general = parser.add_argument_group('General', 'Miscellaneous parameters')
         general.add_argument('--loglevel', type=str,
@@ -133,15 +127,6 @@ class MotionConfig(Config):
             logging.info(f'Setting log level from {oldlevel} to {level}')
             logging.getLogger().setLevel(level)
 
-        if config.stop_at is not None and (config.run_from is not None or config.run_until is not None):
-            print(f'If stop-at is set, run-until and run-from cannot be set')
-            return None
-
-        if config.run_from is not None or config.run_until is not None:
-            # if either are set, both must be set.
-            if config.run_from is None or config.run_until is None:
-                print('if either run-from or run-until are set, both must be set')
-                return None
         return config
 
 class MotionDetectionApp():
@@ -169,9 +154,6 @@ class MotionDetectionApp():
         self.show_name = self._config.show_name
         self.label_rgb = self._config.label_rgb
         self.source_dir = self._config.source_dir
-        self.stop_at = self._config.stop_at
-        self.run_from = self._config.run_from
-        self.run_until = self._config.run_until
         self.nframes = self._config.nframes
         self.loglevel = self._config.loglevel
         self.save_config = self._config.save_config
@@ -210,19 +192,6 @@ class MotionDetectionApp():
             sys.stderr.write(msg + '\n')
             logging.error(msg)
             pl.die()
-
-        if self.stop_at is not None:
-            logging.debug(f'Setting stop-at: {self.stop_at}')
-            (hour, minute, second) = self.stop_at.split(':')
-            self.stop_at = datetime.now().replace(hour=int(hour), minute=int(minute), second=int(second), microsecond=0)
-
-        if self.run_from is not None:
-            logging.debug(f'Setting run-until: {self.run_from}')
-            self.__dict__['run_from_t'] = datetime.strptime(self.run_from, '%H:%M:%S').time()
-
-        if self.run_until is not None:
-            logging.debug(f'Setting run-until: {self.run_until}')
-            self.__dict__['run_until_t'] = datetime.strptime(self.run_until, '%H:%M:%S').time()
 
         if self.label_rgb is not None:
             (R,G,B) = self.label_rgb.split(',')
@@ -287,10 +256,6 @@ class MotionDetectionApp():
                     logging.exception(e)
 
                 break
-            now = datetime.now()
-            if self.stop_at and now > self.stop_at:
-                logging.info(f'Shutting down due to "stop_at": {self.stop_at.strftime("%Y/%m/%d %H:%M:%S")}')
-                pl.die()
             time.sleep(1)
         pl.die()
 

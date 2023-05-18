@@ -8,6 +8,7 @@ import pause
 
 from camera import Camera
 from threads import ImageProducer, CameraImage
+from scheduling import Schedule
 
 from datetime import datetime, timedelta
 import time
@@ -33,23 +34,9 @@ class CameraProducer(ImageProducer):
             self.config.framerate_delta = timedelta(seconds=config.framerate)
 
         self.nextframe_time = self.now
+        self.schedule = Schedule(self.config)
 
-        self.paused:bool = False if self.config.run_from is None else True
-
-        if self.config.stop_at is not None and isinstance(self.config.stop_at, str):
-            logging.debug(f'Setting stop-at: {self.config.stop_at}')
-            (hour, minute, second) = self.config.stop_at.split(':')
-            self.config.stop_at = datetime.now().replace(hour=int(hour), minute=int(minute), second=int(second), microsecond=0)
-
-        if self.config.run_from is not None:
-            logging.debug(f'Setting run-until: {self.config.run_from}')
-            self.config.run_from_t = datetime.strptime(self.config.run_from, '%H:%M:%S').time()
-
-        if self.config.run_until is not None:
-            logging.debug(f'Setting run-until: {self.config.run_until}')
-            self.config.run_until_t = datetime.strptime(self.config.run_until, '%H:%M:%S').time()
-
-        time.sleep(10) # this is really so the camera can warm up
+        time.sleep(10) # let the camera self calibrate
 
     def get_camera_model(self):
         return self.camera.model()
@@ -70,38 +57,25 @@ class CameraProducer(ImageProducer):
 
             # logging.info(f'# {os.uname()[1]}: CPU {psutil.cpu_percent()}%, mem {psutil.virtual_memory().percent}%, TEMP CPU: {temp:.1f}C GPU: {t}C')
             logging.info(f'{elapsed_str} frames: {self.nframes} FPS: {FPS:.2f} Qout: {self.out_queue.qsize()}, '
-                         f'Paused: {"T" if self.paused else "F"}')
+                         f'Paused: {"T" if self.schedule.paused else "F"}')
             self.report_time = self.report_time + self.report_wait
 
     def check_run_until(self):
-        # Manage run_from and run_until
-        current_time = self.now.time()
-        if self.config.run_until is not None and not self.paused:
-            logging.debug(f'Run from {self.config.run_from} until {self.config.run_until}')
-
-            if current_time >= self.config.run_until_t or current_time <= self.config.run_from_t:
-                logging.info(f'Pausing because outside run time: from {self.config.run_from} until {self.config.run_until}')
-                self.paused = True
-
-        if self.paused:
-            logging.debug(f'Paused, check the time. now: {self.now.time()}, run from: {self.config.run_from}')
-            if current_time >= self.config.run_from_t and current_time <= self.config.run_until_t:
-                logging.info(f'Ending pause because inside run time: from {self.config.run_from} until {self.config.run_until}')
-                self.paused = False
-
-        if self.paused:
+        if self.schedule.paused:
             time.sleep(1)
             return False
         return True
 
     def check_stop_at(self):
-        if self.config.stop_at and self.now > self.config.stop_at:
+        if self.schedule.stopped:
             logging.info(f'Shutting down due to "stop_at": {self.config.stop_at.strftime("%Y/%m/%d %H:%M:%S")}')
             self.shutdown_event.set()
             return False
         return True
 
     def preproduce(self):
+        self.schedule.update()
+
         if not self.check_run_until():
             logging.debug(f'Run Until Check Failed')
             return False

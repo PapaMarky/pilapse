@@ -61,6 +61,7 @@ class NightCam:
     def load_suntimes(self):
         self.suntimes = Suntime(location)
 
+    # TODO: Use camera_producer model.
     def create_camera(self):
         logging.info('create PiCamera')
         self.camera = PiCamera(framerate=Fraction(1,6))

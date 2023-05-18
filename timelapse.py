@@ -17,6 +17,7 @@ import sys
 import time
 import pause
 
+from scheduling import Schedule
 from threads import ImageWriter
 from camera_producer import CameraProducer
 
@@ -77,13 +78,9 @@ class TimelapseConfig(Config):
         general.add_argument('--testframe', action='store_true',
                              help='Write a test frame with layout information.')
 
-        timing = parser.add_argument_group('Timing', 'Control when capture starts / stops')
-        timing.add_argument('--stop-at', type=str,
-                             help='Stop loop when time reaches "stop-at". Format: HH:MM:SS with HH in 24 hour format')
-        timing.add_argument('--run-from', type=str,
-                             help='Only run after this time of day. (Format: HH:MM:SS with HH in 24 hour format)')
-        timing.add_argument('--run-until', type=str,
-                             help='Only run until this time of day. (Format: HH:MM:SS with HH in 24 hour format)')
+        # TODO: Should camera producer have an "add_arguents" function since it owns the Schedule object?
+        parser = Schedule.add_arguments(parser, 'Timing')
+
         return parser
 
     def load_from_list(self, arglist=None):
@@ -107,22 +104,6 @@ class TimelapseConfig(Config):
             logging.info(f'Setting log level from {oldlevel} to {level}')
             logging.getLogger().setLevel(level)
 
-        if config.stop_at is not None and (config.run_from is not None or config.run_until is not None):
-            print(f'If stop-at is set, run-until and run-from cannot be set')
-            return None
-
-        logging.info(f'stop_at: {config.stop_at}')
-        if config.stop_at is not None:
-            logging.debug(f'Setting stop-at: {config.stop_at}')
-            (hour, minute, second) = config.stop_at.split(':')
-            config.stop_at = datetime.now().replace(hour=int(hour), minute=int(minute), second=int(second), microsecond=0)
-
-        if config.run_from is not None or config.run_until is not None:
-            # if either are set, both must be set.
-            if config.run_from is None or config.run_until is None:
-                print('if either run-from or run-until are set, both must be set')
-                return None
-
         return config
 class TimelapseApp():
     def __init__(self):
@@ -139,9 +120,6 @@ class TimelapseApp():
         self.prefix = self._config.prefix
         self.show_name = self._config.show_name
         self.label_rgb = self._config.label_rgb
-        self.stop_at = self._config.stop_at
-        self.run_from = self._config.run_from
-        self.run_until = self._config.run_until
         self.nframes = self._config.nframes
         self.loglevel = self._config.loglevel
         self.save_config = self._config.save_config
@@ -165,14 +143,6 @@ class TimelapseApp():
             sys.stderr.write(msg + '\n')
             logging.error(msg)
             pl.die()
-
-        if self.run_from is not None:
-            logging.debug(f'Setting run-until: {self.run_from}')
-            self.__dict__['run_from_t'] = datetime.strptime(self.run_from, '%H:%M:%S').time()
-
-        if self.run_until is not None:
-            logging.debug(f'Setting run-until: {self.run_until}')
-            self.__dict__['run_until_t'] = datetime.strptime(self.run_until, '%H:%M:%S').time()
 
         if self.label_rgb is not None:
             (R,G,B) = self.label_rgb.split(',')
@@ -264,21 +234,6 @@ def oldmain():
     report_time = start_time + report_wait
     while not pl.it_is_time_to_die():
         now = datetime.now()
-        logging.debug(f'-loop {now}: paused: {paused}, run_until; {config.run_until}')
-        if config.run_until is not None and not paused:
-            if now.time() >= config.run_until_t:
-                logging.info(f'Pausing because run_until: {config.run_until}')
-                paused = True
-
-        if paused:
-            if now.time() <= config.run_from_t:
-                logging.info(f'Ending pause because run_from: {config.run_from}')
-                paused = False
-
-        if paused:
-            pause_seconds = 1
-            logging.debug(f'pausing {pause_seconds} second...')
-            time.sleep(pause_seconds)
 
         if config.framerate:
             nextframe_time = now + config.framerate_delta
@@ -295,9 +250,6 @@ def oldmain():
             logging.info(f'Elapsed: {elapsed}, {nframes} frames. FPS = {FPS:5.2f} CPU Temp {temp}c')
             report_time = report_time + report_wait
         nframes += 1
-        if config.stop_at and now > config.stop_at:
-            logging.info(f'Shutting down due to "stop_at": {config.stop_at.strftime("%Y/%m/%d %H:%M:%S")}')
-            pl.die()
         ts = now.strftime('%Y%m%d_%H%M%S.%f')
         fname_base = f'{config.prefix}_{ts}'
         new_name = f'{fname_base}.png'
