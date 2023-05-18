@@ -58,6 +58,7 @@ class CameraProducer(ImageProducer):
             # logging.info(f'# {os.uname()[1]}: CPU {psutil.cpu_percent()}%, mem {psutil.virtual_memory().percent}%, TEMP CPU: {temp:.1f}C GPU: {t}C')
             logging.info(f'{elapsed_str} frames: {self.nframes} FPS: {FPS:.2f} Qout: {self.out_queue.qsize()}, '
                          f'Paused: {"T" if self.schedule.paused else "F"}')
+            logging.info(f'{self.system.status_string()}, throttling: {self.throttled}')
             self.report_time = self.report_time + self.report_wait
 
     def check_run_until(self):
@@ -74,6 +75,9 @@ class CameraProducer(ImageProducer):
         return True
 
     def preproduce(self):
+        if not super().preproduce():
+            return False
+
         self.schedule.update()
 
         if not self.check_run_until():

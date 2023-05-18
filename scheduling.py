@@ -25,7 +25,7 @@ class Schedule:
 
     def __init__(self, config:argparse.Namespace):
         self._stopped:bool = False
-        self._paused:bool = False if self.config.run_from is None else True
+        self._paused:bool = False if config.run_from is None else True
 
         # validate config
         if config.stop_at is not None and (config.run_from is not None or config.run_until is not None):

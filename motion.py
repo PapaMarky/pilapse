@@ -101,6 +101,8 @@ class MotionConfig(Config):
                                     'region of interest')
         debugging.add_argument('--show-motion', action='store_true',
                                help='Highlight motion even when debug is false.')
+        general.add_argument('--nframes', type=int,
+                             help='Stop after writing this many frames. (useful for testing setup)')
         debugging.add_argument('--testframe', action='store_true',
                                help='Write a test frame with layout information.')
 

@@ -20,6 +20,8 @@ import pilapse as pl
 
 import time
 
+from system_resources import SystemResources
+
 def BGR(r, g, b):
     return (b, g, r)
 
@@ -157,19 +159,37 @@ class PilapseThread(threading.Thread):
             raise self.excecption
 
 class ImageProducer(PilapseThread):
+    THROTTLE_DELAY = 0.01
     def __init__(self, name:str, shutdown_event:threading.Event, config:argparse.Namespace, **kwargs):
         super(ImageProducer, self).__init__(name, shutdown_event, config, **kwargs)
         logging.debug(f'ImageProducer init {self.name}')
         self.out_queue:Queue = kwargs.get('out_queue')
         if self.out_queue is None:
             raise Exception(f'Creating Producer thread {self.name} with no out queue')
+        self.system:SystemResources = SystemResources()
+        self.throttled = False
 
     def log_status(self):
         logging.error('Base class log_status')
         pass
 
     def preproduce(self):
-        pass
+        logging.debug(f'ImageProducer preproduce')
+        throttle, message = self.system.should_throttle_back()
+        logging.debug(f'throttle: {throttle} {message}')
+        if throttle == 0:
+            if self.throttled:
+                logging.info(f'Unthrottling: {message}')
+            self.throttled = False
+        if throttle == 1:
+            if not self.throttled:
+                logging.info(f'Throttling: {message}')
+            self.throttled = True
+        if throttle == 2:
+            logging.error(f'NEED TO SHUTDOWN: {message}')
+            self.signal_shutdown()
+            return False
+        return True
 
     def add_to_out_queue(self, image):
         if image is not None:
@@ -189,6 +209,8 @@ class ImageProducer(PilapseThread):
                 image = self.produce_image()
                 self.add_to_out_queue(image)
             self.log_status()
+            if self.throttled:
+                time.sleep(self.THROTTLE_DELAY)
 
     def produce_image(self) -> str:
         raise Exception('Base clase does not implement produce_image()')
@@ -241,6 +263,8 @@ class DirectoryProducer(ImageProducer):
             if self.shutdown_event.is_set():
                 logging.info('Shutdown event received while processing new files')
                 break
+            if self.throttled:
+                time.sleep(self.THROTTLE_DELAY)
             self.now = datetime.now()
             if not self.new_file_queue.empty():
                 # get the new image, make sure we don't have it already, put it in the outgoing queue
