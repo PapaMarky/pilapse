@@ -321,6 +321,7 @@ class ImageConsumer(PilapseThread):
                 t = m.group(1) if m is not None else ''
             d = shutil.disk_usage(self.outdir)
             disk_usage = d.used / d.total * 100.0
+            # NOTE GPU temp should stay below 85
             logging.info(f'{os.uname()[1]}: CPU {psutil.cpu_percent()}%, mem {psutil.virtual_memory().percent}% disk: {disk_usage:.1f}% TEMP CPU: {temp:.1f}C GPU: {t}C')
             logging.info(f'{elapsed_str} frames: {self.nframes} saved: {self.keepers} FPS: {FPS:.2f} Paused: {self.paused} Q: {self.in_queue.qsize()}')
             self.report_time = self.report_time + self.report_wait
