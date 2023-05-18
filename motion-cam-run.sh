@@ -2,25 +2,20 @@
 . $(hostname)-motion.sh
 
 ### all commented lines need to be at the end or lines get ignored
-CMD=python3 ./motion.py \
-	--outdir "$OUTDIR" \
-	--width $WIDTH --height $HEIGHT  \
-	--zoom $ZOOM \
-	--top $TOP \
-	--bottom $BOTTOM \
-	--left $LEFT \
-	--right $RIGHT \
-	--mindiff $MINDIFF \
-	--threshold $THRESHOLD \
-	--dilation $DILATION \
-	--prefix $PREFIX \
+CMD="python3 ./motion.py --outdir $OUTDIR --width $WIDTH --height $HEIGHT --zoom $ZOOM --top $TOP --bottom $BOTTOM"
+CMD="${CMD} --left $LEFT --right $RIGHT --mindiff $MINDIFF --threshold $THRESHOLD --dilation $DILATION --prefix $PREFIX"
+
+if [[ ! -z $TESTFRAME ]]; then
+  CMD="$CMD --testframe \
+  "
+fi
 
 if [[ ! -z $SHOWMOTION ]]; then
-  CMD = "$CMD	--show-motion \
+  CMD="$CMD --show-motion \
   "
 fi
 if [[ ! -z $SHOWNAME ]]; then
-  CMD = "$CMD	--show-name \
+  CMD="$CMD --show-name \
   "
 fi
 
