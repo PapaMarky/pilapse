@@ -39,7 +39,7 @@ class CameraProducer(ImageProducer):
         time.sleep(10) # let the camera self calibrate
 
     def get_camera_model(self):
-        return self.camera.model()
+        return self.camera.model
 
     def log_status(self):
         # logging.info(f'LOG STATUS: now: {self.now}, report time: {self.report_time}')
@@ -56,6 +56,8 @@ class CameraProducer(ImageProducer):
             t = m.group(1) if m is not None else ''
 
             # logging.info(f'# {os.uname()[1]}: CPU {psutil.cpu_percent()}%, mem {psutil.virtual_memory().percent}%, TEMP CPU: {temp:.1f}C GPU: {t}C')
+            logging.info(f'{self.system.model}')
+            logging.info(f'Camera Model: {self.get_camera_model()}')
             logging.info(f'{elapsed_str} frames: {self.nframes} FPS: {FPS:.2f} Qout: {self.out_queue.qsize()}, '
                          f'Paused: {"T" if self.schedule.paused else "F"}')
             logging.info(f'{self.system.status_string()}, throttling: {self.throttled}')
