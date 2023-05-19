@@ -189,6 +189,10 @@ class ImageProducer(PilapseThread):
             logging.error(f'NEED TO SHUTDOWN: {message}')
             self.signal_shutdown()
             return False
+        if self.system.check_for_undercurrent():
+            logging.error(f'Undercurrent detected. Shutting down')
+            self.signal_shutdown()
+            return False
         return True
 
     def add_to_out_queue(self, image):

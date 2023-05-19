@@ -80,6 +80,28 @@ class NightCam:
         logging.info(f'Camera: stop running')
         self.running = False
 
+    def check_for_undercurrent(self):
+        """
+        Check to see if undercurrent condition has occured. Our goal is to shutdown safely before the battery dies.
+        :return: True if an under current has happened, False if not.
+        """
+        # my goal is to shutdown the software safely before the battery dies. 16 is the one I should check
+        bits = {
+            0: 'under-voltage',
+            1: 'arm frequency capped',
+            2: 'currently throttled',
+            16: 'under-voltage has occurred',
+            17: 'arm frequency capped has occurred',
+            18: 'throttling has occurred'
+        }
+
+        with open('/sys/devices/platform/soc/soc:firmware/get_throttled') as f:
+            val = f.read()
+            n = int(val, 16)
+            if n & 16**2:
+                return True
+        return False
+
     def run(self):
         logging.info(f'running camera...')
         self.running = True
@@ -88,6 +110,10 @@ class NightCam:
         # shutdown at 7 am tomorrow
         quiting_time.replace(hour=7, minute=0, second=0, microsecond=0)
         while self.running:
+            if self.check_for_undercurrent():
+                logging.error('Undercurrent detected. Shutting down')
+                self.stop_running()
+                break
             start_time = datetime.datetime.now()
             if start_time >= quiting_time:
                 self.stop_running()
