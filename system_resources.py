@@ -18,8 +18,16 @@ class SystemResources:
 
     GPU_TEMP_PATH = ''
     GPU_COMMAND = '/usr/bin/vcgencmd'
+    LOW_V = '/sys/devices/platform/soc/soc:firmware/get_throttled'
     def __init__(self):
         self.not_pi:bool = False
+        # remember the model
+        with open('/proc/device-tree/model') as f:
+            self._model:str = f.read()
+
+    @property
+    def model(self):
+        return self._model
 
     def status_string(self):
         gpu_str = ''
@@ -30,6 +38,11 @@ class SystemResources:
             gpu_str = f'temp: {t} ({v})'
 
         return f'GPU: {gpu_str}'
+
+    def should_shutdown(self):
+        if self.check_for_undercurrent():
+            return True
+        return False
 
     def should_throttle_back(self):
         """
@@ -48,6 +61,29 @@ class SystemResources:
                 message = f'GPU Temp: {v}'
             return status, message
         return status, message
+
+    def check_for_undercurrent(self):
+        """
+        Check to see if undercurrent condition has occured. Our goal is to shutdown safely before the battery dies.
+        :return: True if an under current has happened, False if not.
+        """
+        # my goal is to shutdown the software safely before the battery dies. 16 is the one I should check
+        bits = {
+            0: 'under-voltage',
+            1: 'arm frequency capped',
+            2: 'currently throttled',
+            16: 'under-voltage has occurred',
+            17: 'arm frequency capped has occurred',
+            18: 'throttling has occurred'
+        }
+
+        with open('/sys/devices/platform/soc/soc:firmware/get_throttled') as f:
+            val = f.read()
+            n = int(val, 16)
+            if n & 16**2:
+                return True
+
+        return False
 
     def check_gpu_temp(self):
         t = self.get_gpu_temp()
