@@ -1,4 +1,5 @@
 # settings for HOSTNAME
+
 OUTDIR=../exposures/$(hostname)/%Y%m%d
 WIDTH=1920
 HEIGHT=1088
@@ -14,3 +15,4 @@ DILATION=3
 
 SHOWNAME=1
 SHOWMOTION=
+TESTFRAME=
