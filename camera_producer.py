@@ -28,7 +28,13 @@ class CameraProducer(ImageProducer):
         self.width:int = width
         self.height:int = height
         self.prefix:str = prefix
-        self.camera:Camera = Camera(width, height, zoom)
+        ar = width/height
+        ar_16_9 = 16/9
+        ar_4_3 = 4/3
+        d1 = abs(ar-ar_16_9)
+        d2 = abs(ar-ar_4_3)
+        ar = '4:3' if d1 > d2 else '16:9'
+        self.camera:Camera = Camera(width, height, zoom=zoom, aspect_ratio=ar,pause=10)
         self.nframes:int = 0
         if self.config.framerate:
             self.config.framerate_delta = timedelta(seconds=config.framerate)
