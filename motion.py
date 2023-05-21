@@ -59,7 +59,7 @@ class MotionDetectionApp(Configurable):
     ARGS_ADDED = False
     @classmethod
     def add_arguments_to_parser(cls, parser:argparse.ArgumentParser, argument_group_name:str='Motion Settings')->argparse.ArgumentParser:
-        logging.info(f'Adding motion detection args to parser (ADDED:{MotionDetectionApp.ARGS_ADDED})')
+        logging.debug(f'Adding motion detection args to parser (ADDED:{MotionDetectionApp.ARGS_ADDED})')
         motion = parser.add_argument_group(argument_group_name, 'Parameters related to motion detection')
         motion.add_argument('--mindiff', '-m', type=int, help='Minimum size of "moving object" to detect', default=75)
         motion.add_argument('--top', '-t', type=float, help='top of region of interest. (0.0 - 1.0) '
@@ -130,7 +130,7 @@ class MotionDetectionApp(Configurable):
         return config
 
     def process_config(self, config):
-        logging.info(f'CONFIG: {config}')
+        logging.debug(f'CONFIG: {config}')
         super().process_config(config)
 
         self.bottom = int(self._config.bottom * self._config.height)

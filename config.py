@@ -54,7 +54,7 @@ class Configurable:
 
     @classmethod
     def add_arguments_to_parser(cls, parser:argparse.ArgumentParser, argument_group_name:str= 'Application Settings')->argparse.ArgumentParser:
-        logging.info(f'Adding Config({cls}) args to parser (ADDED: {Configurable.ARGS_ADDED})')
+        logging.debug(f'Adding Config({cls}) args to parser (ADDED: {Configurable.ARGS_ADDED})')
         configuration = parser.add_argument_group(argument_group_name, 'Parameters related to the configuration')
         configuration.add_argument('--loglevel', type=str,
                              help='Set the log level.')

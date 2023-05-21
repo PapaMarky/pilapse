@@ -163,7 +163,7 @@ class ImageProducer(PilapseThread, Configurable):
     ARGS_ADDED = False
     @classmethod
     def add_arguments_to_parser(cls, parser:argparse.ArgumentParser, argument_group_name:str='Images')->argparse.ArgumentParser:
-        logging.info(f'ImageProducer({cls}) add_arguments: ADDED: {ImageProducer.ARGS_ADDED}')
+        logging.debug(f'ImageProducer({cls}) add_arguments: ADDED: {ImageProducer.ARGS_ADDED}')
         if ImageProducer.ARGS_ADDED:
             return parser
         Configurable.add_arguments_to_parser(parser)
@@ -185,11 +185,14 @@ class ImageProducer(PilapseThread, Configurable):
             raise Exception(f'Creating Producer thread {self.name} with no out queue')
         self.system:SystemResources = SystemResources()
         self.throttled = False
-        self.nframes:int = 0
+        self.nframes_count:int = 0
 
     def log_status(self):
-        logging.error('Base class log_status')
-        pass
+        elapsed = self.now - self.start_time
+        elapsed_str = str(elapsed).split('.')[0]
+        # TODO: nframes is owned by ImageProducer
+        FPS = self.nframes_count / elapsed.total_seconds()
+        logging.info(f'{elapsed_str} frames: {self.nframes_count} FPS: {FPS:.2f}')
 
     def preproduce(self):
         logging.debug(f'ImageProducer preproduce')
@@ -212,8 +215,8 @@ class ImageProducer(PilapseThread, Configurable):
             self.signal_shutdown()
             return False
 
-        if self.config.nframes is not None and self.nframes > self.config.nframes:
-            logging.info(f'nframes ({self.nframes}) from config ({self.config.nframes}) exceeded. Stopping.')
+        if self.config.nframes is not None and self.nframes_count >= self.config.nframes:
+            logging.info(f'nframes ({self.nframes_count}) from config ({self.config.nframes}) exceeded. Stopping.')
             self.shutdown_event.set()
             return False
 
@@ -221,8 +224,8 @@ class ImageProducer(PilapseThread, Configurable):
 
     def add_to_out_queue(self, image):
         if image is not None:
-            self.nframes += 1
-            logging.info(f'ADDING IMAGE {self.nframes} TO QUEUE')
+            self.nframes_count += 1
+            logging.debug(f'ADDING IMAGE {self.nframes_count} TO QUEUE')
             self.out_queue.put(image)
 
     def do_work(self) -> None:
@@ -242,14 +245,13 @@ class ImageProducer(PilapseThread, Configurable):
                 time.sleep(self.THROTTLE_DELAY)
 
     def produce_image(self) -> str:
-        raise Exception('Base clase does not implement produce_image()')
-
+        raise Exception('Base class cannot produce images')
 
 class DirectoryProducer(ImageProducer):
     ARGS_ADDED = False
     @classmethod
     def add_arguments_to_parser(cls, parser:argparse.ArgumentParser, argument_group_name:str='Image Input')->argparse.ArgumentParser:
-        logging.info(f'DirectoryProducer({cls}) add_arguments: ADDED: {DirectoryProducer.ARGS_ADDED}')
+        logging.debug(f'DirectoryProducer({cls}) add_arguments: ADDED: {DirectoryProducer.ARGS_ADDED}')
         if DirectoryProducer.ARGS_ADDED:
             return parser
         ImageProducer.add_arguments_to_parser(parser)
@@ -354,7 +356,7 @@ class ImageConsumer(PilapseThread):
         if self.in_queue is None:
            raise Exception(f'Creating Consumer thread {self.name} with no in queue')
         self._shutdown_event:threading.Event = shutdown_event
-        self.nframes:int = 0
+        # self.nframes:int = 0
         self.keepers:int = 0
         self.start_time:datetime = datetime.now()
         self.now:datetime = self.start_time
@@ -390,8 +392,6 @@ class ImageConsumer(PilapseThread):
     def log_status(self):
         if self.now > self.report_time:
             elapsed = self.now - self.start_time
-            elapsed_str = str(elapsed).split('.')[0]
-            FPS = self.nframes / elapsed.total_seconds()
             thermal_temp_file = '/sys/class/thermal/thermal_zone0/temp'
             temp = '-'
             t = '--'
@@ -407,14 +407,14 @@ class ImageConsumer(PilapseThread):
             disk_usage = d.used / d.total * 100.0
             # NOTE GPU temp should stay below 85
             logging.info(f'{os.uname()[1]}: CPU {psutil.cpu_percent()}%, mem {psutil.virtual_memory().percent}% disk: {disk_usage:.1f}% TEMP CPU: {temp:.1f}C GPU: {t}C')
-            logging.info(f'{elapsed_str} frames: {self.nframes} saved: {self.keepers} FPS: {FPS:.2f} Paused: {self.paused} Q: {self.in_queue.qsize()}')
+            logging.info(f'saved: {self.keepers} Paused: {self.paused} Q: {self.in_queue.qsize()}')
             self.report_time = self.report_time + self.report_wait
 
 
     def check_for_shutdown(self):
         if self._shutdown_event.is_set():
             logging.warning(f'shutdown event is set')
-            if self.in_queue.empty() or (self.config.nframes is not None and self.nframes >= self.config.nframes):
+            if self.in_queue.empty():
                 logging.info('Queue is empty. Shutting down')
                 return True
             logging.warning(f'Trying to shutdown, but queue not empty: {self.in_queue.qsize()}')
@@ -491,7 +491,6 @@ class ImageWriter(ImageConsumer):
             path = os.path.join(self.outdir, image.filename)
         logging.info(f'ImageWriter: writing %s', path)
         cv2.imwrite(path, image.image)
-        self.nframes += 1
 
 class ImagePipeline(ImageProducer, ImageConsumer):
     def __init__(self, name:str, shutdown_event:threading.Event, config:argparse.Namespace,
@@ -502,9 +501,9 @@ class ImagePipeline(ImageProducer, ImageConsumer):
         if self.now > self.report_time:
             elapsed = self.now - self.start_time
             elapsed_str = str(elapsed).split('.')[0]
-            FPS = self.nframes / elapsed.total_seconds()
+            FPS = self.nframes_count / elapsed.total_seconds()
 
-            logging.info(f'{elapsed_str} frames: {self.nframes} FPS: {FPS:.2f} Qin: {self.in_queue.qsize()} Qout: {self.out_queue.qsize()}')
+            logging.info(f'{elapsed_str} frames: {self.nframes_count} FPS: {FPS:.2f} Qin: {self.in_queue.qsize()} Qout: {self.out_queue.qsize()}')
             self.report_time = self.report_time + self.report_wait
 
     def do_work(self) -> None:
@@ -528,66 +527,15 @@ class MotionPipeline(ImagePipeline):
         self.count:int = 0
         self.paused:bool = False
 
-        if self.config.stop_at is not None:
-            logging.debug(f'Setting stop-at: {self.config.stop_at}')
-            (hour, minute, second) = self.config.stop_at.split(':')
-            self.config.stop_at = datetime.now().replace(hour=int(hour), minute=int(minute), second=int(second), microsecond=0)
-
-        if self.config.run_from is not None:
-            logging.debug(f'Setting run-until: {self.config.run_from}')
-            self.config.run_from_t = datetime.strptime(self.config.run_from, '%H:%M:%S').time()
-
-        if self.config.run_until is not None:
-            logging.debug(f'Setting run-until: {self.config.run_until}')
-            self.config.run_until_t = datetime.strptime(self.config.run_until, '%H:%M:%S').time()
-
         if self.config.label_rgb is not None:
             (R,G,B) = self.config.label_rgb.split(',')
             self.config.label_rgb = BGR(int(R), int(G), int(B))
 
-    def check_run_until(self) -> bool:
-        # TODO should be in the producer thread. If the producer stops producing,
-        # the consumer will stop consuming
-
-        # Manage run_from and run_until
-        current_time = self.now.time()
-        if self.config.run_until is not None and not self.paused:
-            logging.debug(f'Run from {self.config.run_from} until {self.config.run_until}')
-
-            if current_time >= self.config.run_until_t or current_time <= self.config.run_from_t:
-                logging.info(f'Starting pause because outside run time: from {self.config.run_from} until {self.config.run_until}')
-                self.paused = True
-
-        if self.paused:
-            logging.debug(f'Paused, check the time. now: {self.now.time()}, run from: {self.config.run_from}')
-            if current_time >= self.config.run_from_t and current_time <= self.config.run_until_t:
-                logging.info(f'Ending pause because inside run time: from {self.config.run_from} until {self.config.run_until}')
-                self.paused = False
-
-        if self.paused:
-            time.sleep(1)
-            return False
-        return True
-
-    def check_stop_at(self) -> bool:
-        if self.config.stop_at and self.now > self.config.stop_at:
-            logging.info(f'Shutting down due to "stop_at": {self.config.stop_at.strftime("%Y/%m/%d %H:%M:%S")}')
-            self.signal_shutdown()
-            return False
-        return True
-
     def preconsume(self) -> bool:
         # If nframes is set, have we exceeded it?
-        if self.config.nframes and self.nframes > self.config.nframes:
+        # ImageProducer does this
+        if self.config.nframes and self.nframes_count > self.config.nframes:
             logging.info(f'Reached limit ({self.config.nframes} frames). Stopping.')
-            self.signal_shutdown()
-            return False
-
-        # TODO should be useing Schedule (or remove because Producers should be doing this)
-        if not self.check_run_until():
-            return False
-
-        if not self.check_stop_at():
             self.signal_shutdown()
             return False
         return True
@@ -601,11 +549,10 @@ class MotionPipeline(ImagePipeline):
         self.config.right = int(self.config.right * w)
 
     def consume_image(self, image:Image) -> None:
-        self.nframes += 1
         self.previous_image = self.current_image
         self.current_image = image
 
-        logging.debug(f'Consuming image: {image.filename}, Q in: {self.in_queue.qsize()}')
+        logging.info(f'Consuming image: {image.filename}, Q in: {self.in_queue.qsize()}')
         fname_base = self.current_image.base_filename
         new_name = f'{fname_base}_90.{self.current_image.type}' if self.config.save_diffs else f'{fname_base}.{self.current_image.type}'
         new_name_motion = f'{fname_base}_90M.{self.current_image.type}'

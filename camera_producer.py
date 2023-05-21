@@ -26,7 +26,7 @@ class CameraProducer(ImageProducer):
     ARGS_ADDED = False
     @classmethod
     def add_arguments_to_parser(cls, parser:argparse.ArgumentParser, argument_group_name:str= 'Camera Settings')->argparse.ArgumentParser:
-        logging.info(f'Adding CameraProducer({cls}) args (ADDED: {CameraProducer.ARGS_ADDED})')
+        logging.debug(f'Adding CameraProducer({cls}) args (ADDED: {CameraProducer.ARGS_ADDED})')
         if CameraProducer.ARGS_ADDED:
             return parser
         # CameraProducer is an ImageProducer. Call the base class
@@ -51,7 +51,7 @@ class CameraProducer(ImageProducer):
         return parser
 
     def process_config(self, config):
-        logging.info(f'CONFIG: {config}')
+        logging.debug(f'CONFIG: {config}')
         super().process_config(config)
 
         if config.zoom < 1.0:
@@ -94,9 +94,6 @@ class CameraProducer(ImageProducer):
         # logging.info(f'LOG STATUS: now: {self.now}, report time: {self.report_time}')
         if self.now > self.report_time:
             elapsed = self.now - self.start_time
-            elapsed_str = str(elapsed).split('.')[0]
-            # TODO: nframes is owned by ImageProducer
-            FPS = self.nframes / elapsed.total_seconds()
             with open('/sys/class/thermal/thermal_zone0/temp') as f:
                 temp = int(f.read().strip()) / 1000
             p = subprocess.run(['vcgencmd', 'measure_temp'], capture_output=True)
@@ -108,7 +105,8 @@ class CameraProducer(ImageProducer):
             # logging.info(f'# {os.uname()[1]}: CPU {psutil.cpu_percent()}%, mem {psutil.virtual_memory().percent}%, TEMP CPU: {temp:.1f}C GPU: {t}C')
             logging.info(f'{self.system.model}')
             logging.info(f'Camera Model: {self.get_camera_model()}')
-            logging.info(f'{elapsed_str} frames: {self.nframes} FPS: {FPS:.2f} Qout: {self.out_queue.qsize()}, '
+            super().log_status()
+            logging.info(f'Qout: {self.out_queue.qsize()}, '
                          f'Paused: {"T" if self.schedule.paused else "F"}')
             logging.info(f'{self.system.status_string()}, throttling: {self.throttled}')
             self.report_time = self.report_time + self.report_wait
@@ -150,7 +148,7 @@ class CameraProducer(ImageProducer):
                 return
             img = CameraImage(self.camera.capture(), prefix=self.prefix, type='png')
             logging.debug(f'captured {img.base_filename}')
-            self.out_queue.put(img)
+            self.add_to_out_queue(img)
 
             if self.config.framerate:
                 logging.debug(f'now: {self.now}, delta: {self.config.framerate_delta}')
