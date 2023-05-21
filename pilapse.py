@@ -80,11 +80,13 @@ def die(status=0):
     time.sleep(0.1)
     sys.exit(status)
 
-logfile = f'{get_program_name()}.log'
-logfile = os.environ.get('LOGFILE', logfile)
+logfile = os.environ.get('LOGFILE')
+if not logfile:
+    logfile = f'{get_program_name()}.log'
 if logfile == 'stdout':
     logfile = None
 
+print(f'Logging to {logfile}')
 logging.basicConfig(
     filename=logfile,
     level=logging.INFO,
