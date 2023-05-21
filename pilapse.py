@@ -80,11 +80,16 @@ def die(status=0):
     time.sleep(0.1)
     sys.exit(status)
 
-logging.basicConfig(filename=f'{get_program_name()}.log',
-#                    encoding='utf-8', # doesn't work in py 3.7
-                    level=logging.INFO,
-                    format='%(asctime)s|%(levelname)s|%(threadName)s|%(message)s'
-                    )
+logfile = f'{get_program_name()}.log'
+logfile = os.environ.get('LOGFILE', logfile)
+if logfile == 'stdout':
+    logfile = None
+
+logging.basicConfig(
+    filename=logfile,
+    level=logging.INFO,
+    format='%(asctime)s|%(levelname)s|%(threadName)s|%(message)s'
+    )
 
 
 class PilapseConfig(Config):

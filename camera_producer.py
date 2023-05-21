@@ -6,9 +6,12 @@ import threading
 
 import pause
 
+import threads
 from camera import Camera
+from pilapse import BGR
 from threads import ImageProducer, CameraImage
 from scheduling import Schedule
+from config import Configurable
 
 from datetime import datetime, timedelta
 import time
@@ -20,22 +23,62 @@ class CameraProducer(ImageProducer):
     #    - stop_at
     #    - nframes
     # or move that control into app?
-    def __init__(self, width:int, height:int, zoom:float, prefix:str,
+    ARGS_ADDED = False
+    @classmethod
+    def add_arguments_to_parser(cls, parser:argparse.ArgumentParser, argument_group_name:str= 'Camera Settings')->argparse.ArgumentParser:
+        logging.info(f'Adding CameraProducer({cls}) args (ADDED: {CameraProducer.ARGS_ADDED})')
+        if CameraProducer.ARGS_ADDED:
+            return parser
+        # CameraProducer is an ImageProducer. Call the base class
+        threads.ImageProducer.add_arguments_to_parser(parser)
+
+        camera = parser.add_argument_group(argument_group_name, 'Parameters related to the camera')
+        camera.add_argument('--zoom', type=float, help='Zoom factor. Must be greater than 1.0', default=1.0)
+        camera.add_argument('--framerate', type=float, default=None,
+                           help='Framerate of the camera. '
+                                'Int value. Units is seconds. EX. Setting framerate to "3" will take a frame every'
+                                '3 seconds. Defaults to 0 which means "as fast as you can" ')
+
+        camera.add_argument('--show-name', action='store_true',
+                           help='Write a timestamp on each frame')
+        camera.add_argument('--label-rgb', type=str,
+                           help='Set the color of the timestamp on each frame. '
+                                'FORMAT: comma separated integers between 0 and 255, no spaces EX: "R,G,B" ')
+
+        CameraProducer.ARGS_ADDED = True
+        # CameraProducer owns a Schedule instance
+        Schedule.add_arguments_to_parser(parser, 'Scheduling')
+        return parser
+
+    def process_config(self, config):
+        logging.info(f'CONFIG: {config}')
+        super().process_config(config)
+
+        if config.zoom < 1.0:
+            msg = f'Zoom must be 1.0 or greater. (set to: {config.zoom})'
+            raise Exception(msg)
+
+        if config.label_rgb is not None:
+            (R,G,B) = config.label_rgb.split(',')
+            self.label_rgb = BGR(int(R), int(G), int(B))
+
+    def __init__(self,
                  shutdown_event:threading.Event, config:argparse.Namespace,
                  **kwargs):
         super(CameraProducer, self).__init__('CameraProducer', shutdown_event, config, **kwargs)
         logging.debug(f'CameraProducer init {self.name}')
-        self.width:int = width
-        self.height:int = height
-        self.prefix:str = prefix
-        ar = width/height
+        self.process_config(config)
+
+        self.width:int = config.width
+        self.height:int = config.height
+        self.prefix:str = config.prefix
+        ar = config.width/config.height
         ar_16_9 = 16/9
         ar_4_3 = 4/3
         d1 = abs(ar-ar_16_9)
         d2 = abs(ar-ar_4_3)
         ar = '4:3' if d1 > d2 else '16:9'
-        self.camera:Camera = Camera(width, height, zoom=zoom, aspect_ratio=ar,pause=10)
-        self.nframes:int = 0
+        self.camera:Camera = Camera(config.width, config.height, zoom=config.zoom, aspect_ratio=ar, pause=10)
         if self.config.framerate:
             self.config.framerate_delta = timedelta(seconds=config.framerate)
 
@@ -52,6 +95,7 @@ class CameraProducer(ImageProducer):
         if self.now > self.report_time:
             elapsed = self.now - self.start_time
             elapsed_str = str(elapsed).split('.')[0]
+            # TODO: nframes is owned by ImageProducer
             FPS = self.nframes / elapsed.total_seconds()
             with open('/sys/class/thermal/thermal_zone0/temp') as f:
                 temp = int(f.read().strip()) / 1000
@@ -97,11 +141,6 @@ class CameraProducer(ImageProducer):
             self.shutdown_event.set()
             return False
 
-        if self.config.nframes is not None and self.nframes > self.config.nframes:
-            logging.info(f'nframes ({self.config.nframes}) from config exceeded. Stopping.')
-            self.shutdown_event.set()
-            return False
-
         return True
     def produce_image(self) -> str:
         if not self.shutdown_event.is_set():
@@ -112,7 +151,6 @@ class CameraProducer(ImageProducer):
             img = CameraImage(self.camera.capture(), prefix=self.prefix, type='png')
             logging.debug(f'captured {img.base_filename}')
             self.out_queue.put(img)
-            self.nframes += 1
 
             if self.config.framerate:
                 logging.debug(f'now: {self.now}, delta: {self.config.framerate_delta}')

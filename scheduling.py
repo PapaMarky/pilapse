@@ -3,14 +3,21 @@ import logging
 from datetime import datetime
 from datetime import time
 
-class Schedule:
+from config import Configurable
+
+
+class Schedule(Configurable):
     """
     Class for scheduling when the program should run.
 
     Client must use argparse to set up command line
     """
+    ARGS_ADDED = False
     @classmethod
-    def add_arguments(cls, parser:argparse.ArgumentParser, argument_group_name:str='Scheduling')->argparse.ArgumentParser:
+    def add_arguments_to_parser(cls, parser:argparse.ArgumentParser, argument_group_name:str='Scheduling')->argparse.ArgumentParser:
+        if Schedule.ARGS_ADDED:
+            return parser
+
         scheduling = parser.add_argument_group(argument_group_name, 'Control when to run and when to stop')
         scheduling.add_argument('--stop-at', type=str, default=None,
                             help='Stop running (exit) when time reaches "stop-at". '
@@ -21,6 +28,7 @@ class Schedule:
         scheduling.add_argument('--run-until', type=str, default=None,
                             help='Only run until this time of day. (Format: HH:MM:SS with HH in 24 hour format)'
                                  'Pause (don not exit) if after this time')
+        Schedule.ARGS_ADDED = True
         return parser
 
     def __init__(self, config:argparse.Namespace):

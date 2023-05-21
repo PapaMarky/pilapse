@@ -20,6 +20,7 @@ import pilapse as pl
 
 import time
 
+from config import Configurable
 from system_resources import SystemResources
 
 def BGR(r, g, b):
@@ -158,16 +159,33 @@ class PilapseThread(threading.Thread):
         if self.excecption:
             raise self.excecption
 
-class ImageProducer(PilapseThread):
+class ImageProducer(PilapseThread, Configurable):
+    ARGS_ADDED = False
+    @classmethod
+    def add_arguments_to_parser(cls, parser:argparse.ArgumentParser, argument_group_name:str='Images')->argparse.ArgumentParser:
+        logging.info(f'ImageProducer({cls}) add_arguments: ADDED: {ImageProducer.ARGS_ADDED}')
+        if ImageProducer.ARGS_ADDED:
+            return parser
+        Configurable.add_arguments_to_parser(parser)
+        images = parser.add_argument_group(argument_group_name, 'Parameters related to creating images')
+        images.add_argument('--width', '-W', type=int, help='width of each image', default=640)
+        images.add_argument('--height', '-H', type=int, help='height of each image', default=480)
+        images.add_argument('--nframes', type=int,
+                             help='Stop after creating this many images. (useful for testing setup)')
+        ImageProducer.ARGS_ADDED = True
+        return parser
+
     THROTTLE_DELAY = 0.01
     def __init__(self, name:str, shutdown_event:threading.Event, config:argparse.Namespace, **kwargs):
         super(ImageProducer, self).__init__(name, shutdown_event, config, **kwargs)
+        self.process_config(config)
         logging.debug(f'ImageProducer init {self.name}')
         self.out_queue:Queue = kwargs.get('out_queue')
         if self.out_queue is None:
             raise Exception(f'Creating Producer thread {self.name} with no out queue')
         self.system:SystemResources = SystemResources()
         self.throttled = False
+        self.nframes:int = 0
 
     def log_status(self):
         logging.error('Base class log_status')
@@ -193,12 +211,19 @@ class ImageProducer(PilapseThread):
             logging.error(f'Undercurrent detected. Shutting down')
             self.signal_shutdown()
             return False
+
+        if self.config.nframes is not None and self.nframes > self.config.nframes:
+            logging.info(f'nframes ({self.nframes}) from config ({self.config.nframes}) exceeded. Stopping.')
+            self.shutdown_event.set()
+            return False
+
         return True
 
     def add_to_out_queue(self, image):
         if image is not None:
-            self.out_queue.put(image)
             self.nframes += 1
+            logging.info(f'ADDING IMAGE {self.nframes} TO QUEUE')
+            self.out_queue.put(image)
 
     def do_work(self) -> None:
         self.start_work()
@@ -221,6 +246,20 @@ class ImageProducer(PilapseThread):
 
 
 class DirectoryProducer(ImageProducer):
+    ARGS_ADDED = False
+    @classmethod
+    def add_arguments_to_parser(cls, parser:argparse.ArgumentParser, argument_group_name:str='Image Input')->argparse.ArgumentParser:
+        logging.info(f'DirectoryProducer({cls}) add_arguments: ADDED: {DirectoryProducer.ARGS_ADDED}')
+        if DirectoryProducer.ARGS_ADDED:
+            return parser
+        ImageProducer.add_arguments_to_parser(parser)
+        directory = parser.add_argument_group(argument_group_name, 'Parameters related to loading image files')
+
+        directory.add_argument('--source-dir', type=str,
+                           help='If source-dir is set, images will be loaded from files in a directory instead')
+
+        return parser
+
     class Handler(watchdog.events.PatternMatchingEventHandler):
         def __init__(self, patterns:list, file_event_queue:queue.Queue):
             # Set the patterns for PatternMatchingEventHandler
@@ -233,10 +272,10 @@ class DirectoryProducer(ImageProducer):
             # logging.info(f"Watchdog received created event - {event.src_path}")
             self.out_queue.put(event.src_path)
 
-    def __init__(self, dirpath:str, ext:str, shutdown_event:threading.Event, config:argparse.Namespace, **kwargs):
+    def __init__(self, ext:str, shutdown_event:threading.Event, config:argparse.Namespace, **kwargs):
         super(DirectoryProducer, self).__init__('DirectoryProducer', shutdown_event, config, **kwargs)
-        logging.info(f'DirectoryProducer({dirpath}, {ext}, {kwargs.get("out_queue")}, {shutdown_event})')
-        self.dirpath:str = dirpath
+        logging.info(f'DirectoryProducer({config.source_dir}, {ext}, {kwargs.get("out_queue")}, {shutdown_event})')
+        self.dirpath:str = config.source_dir
         self.extension:str = ext
         self.new_file_queue:Queue = Queue()
         self.handler:DirectoryProducer.Handler = DirectoryProducer.Handler([f'*.{ext}'], self.new_file_queue)
@@ -291,6 +330,23 @@ class DirectoryProducer(ImageProducer):
 
 
 class ImageConsumer(PilapseThread):
+    ARGS_ADDED = False
+    # TODO: should base classes implement "add args to group" function?
+    @classmethod
+    def add_arguments_to_parser(cls, parser:argparse.ArgumentParser, argument_group_name:str='Image Output Settings')->argparse.ArgumentParser:
+        if ImageConsumer.ARGS_ADDED:
+            return parser
+        images = parser.add_argument_group(argument_group_name, 'Parameters related to outputting images')
+        ImageConsumer.add_arguments_to_group(images)
+
+        ImageConsumer.ARGS_ADDED = True
+        return parser
+
+    @classmethod
+    def add_arguments_to_group(cls, group:argparse.ArgumentParser):
+        group.add_argument('--outdir', type=str,
+                            help='directory where frame files will be written.',
+                            default='./%Y%m%d')
     def __init__(self, name:str, shutdown_event:threading.Event, config:argparse.Namespace, **kwargs):
         super(ImageConsumer, self).__init__(name, shutdown_event, config)
         logging.debug(f'ImageConsumer init {self.name}')
@@ -396,6 +452,22 @@ class ImageConsumer(PilapseThread):
         logging.error(f'Base class Consuming {image.filename} ({self}')
 
 class ImageWriter(ImageConsumer):
+    ARGS_ADDED = False
+    @classmethod
+    def add_arguments_to_parser(cls, parser:argparse.ArgumentParser, argument_group_name:str='Image File Settings')->argparse.ArgumentParser:
+        if ImageWriter.ARGS_ADDED:
+            return parser
+        images = parser.add_argument_group(argument_group_name, 'Parameters related to image files')
+        super().add_arguments_to_group(images)
+        ImageWriter.add_arguments_to_group(images)
+        ImageWriter.ARGS_ADDED = True
+        return parser
+
+    @classmethod
+    def add_arguments_to_group(cls, group:argparse.ArgumentParser):
+        group.add_argument('--prefix', type=str, default='motion',
+                            help='Prefix frame filenames with this string')
+
     def __init__(self, shutdown_event:threading.Event, config:argparse.Namespace, **kwargs):
         super(ImageWriter, self).__init__('ImageWriter', shutdown_event, config, **kwargs)
         logging.debug(f'ImageWriter init {self.name}')
@@ -511,6 +583,7 @@ class MotionPipeline(ImagePipeline):
             self.signal_shutdown()
             return False
 
+        # TODO should be useing Schedule (or remove because Producers should be doing this)
         if not self.check_run_until():
             return False
 
