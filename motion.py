@@ -1,11 +1,7 @@
 #! /usr/bin/env python3
 
 import argparse
-import json
 import threading
-from datetime import datetime, timedelta
-
-import camera_producer
 from camera_producer import CameraProducer
 
 from config import Config
@@ -13,13 +9,8 @@ from config import Configurable
 import pilapse as pl
 from queue import Queue
 from threads import DirectoryProducer, MotionPipeline, ImageWriter
-from scheduling import Schedule
 
-import cv2
-import imutils
 import logging
-import os
-import sys
 import time
 
 def BGR(r, g, b):
@@ -33,26 +24,6 @@ MAGENTA = BGR(255, 0, 255)
 YELLOW = BGR(255, 255, 0)
 ORANGE = BGR(255,165,0)
 WHITE = BGR(255, 255, 255)
-
-class MotionConfig(Config):
-    def __init__(self):
-        super().__init__()
-
-    def create_parser(self):
-        parser = argparse.ArgumentParser(description='Capture images when motion is detected')
-
-
-        frame.add_argument('--source-dir', type=str,
-                           help='If source-dir is set, image files will be loaded from a directory instead of '
-                                'the camera')
-
-
-        general = parser.add_argument_group('General', 'Miscellaneous parameters')
-
-        debugging = parser.add_argument_group('Debbuging / Troubleshooting')
-
-        return parser
-
 
 class MotionDetectionApp(Configurable):
 
@@ -112,8 +83,6 @@ class MotionDetectionApp(Configurable):
         self._parser = MotionDetectionApp.add_arguments_to_parser(parser)
         self._config = self.load_from_list(self._parser)
         MotionDetectionApp.validate_config(self._config)
-        #if self._config is None:
-        #    raise Exception('Bad config')
 
         if not pl.it_is_time_to_die():
             self.process_config(self._config)
