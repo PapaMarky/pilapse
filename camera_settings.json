@@ -1,52 +1,52 @@
 {
   "y_last_light": {
-    "iso": 300,
-    "shutter": 6000000,
-    "framerate": 0.166667
+    "iso": 60,
+    "shutter": 10000000,
+    "framerate": 0.1
   },
   "first_light": {
-    "iso": 300,
-    "shutter": 6000000,
-    "framerate": 0.166667
+    "iso": 60,
+    "shutter": 10000000,
+    "framerate": 0.1
   },
   "dawn": {
-    "iso": 100,
-    "shutter": 100000,
-    "framerate": 15
+    "iso": 60,
+    "shutter": 5000000,
+    "framerate": 0.05
   },
   "sunrise": {
-    "iso": 100,
-    "shutter": 10000,
-    "framerate": 0.166667
+    "iso": 60,
+    "shutter": 2500000,
+    "framerate": 0.4
   },
   "solar_noon": {
-    "iso": 100,
+    "iso": 60,
     "shutter": 2000,
     "framerate": 30
   },
   "golden_hour": {
-    "iso": 100,
+    "iso": 60,
     "shutter": 2000,
     "framerate": 30
   },
   "sunset": {
-    "iso": 100,
-    "shutter": 10000,
+    "iso": 60,
+    "shutter": 2500000,
     "framerate": 15
   },
   "dusk": {
-    "iso": 100,
-    "shutter": 100000,
-    "framerate": 0.166667
+    "iso": 60,
+    "shutter": 5000000,
+    "framerate": 0.05
   },
   "last_light": {
-    "iso": 300,
-    "shutter": 6000000,
-    "framerate": 0.166667
+    "iso": 60,
+    "shutter": 10000000,
+    "framerate": 0.1
   },
   "t_first_light": {
-    "iso": 300,
-    "shutter": 6000000,
-    "framerate": 0.166667
+    "iso": 60,
+    "shutter": 10000000,
+    "framerate": 0.1
   }
 }

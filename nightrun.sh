@@ -6,4 +6,4 @@ export LOGFILE=nightrun.log
        --filename '%Y%m%d_%H%M%S_%ISO%_%SHUTTER%_%TIMEOFDAY%' \
        --settings ./camera_settings.json \
        --sleep 40 \
-       --zoom 4
+       --zoom 1

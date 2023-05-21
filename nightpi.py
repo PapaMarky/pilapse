@@ -64,7 +64,9 @@ class NightCam:
     # TODO: Use camera_producer model.
     def create_camera(self):
         logging.info('create PiCamera')
-        self.camera = PiCamera(framerate=Fraction(1,6))
+        self.camera = PiCamera(framerate_range=(1/10, 30),
+                               sensor_mode=1
+                               )
         self.camera.rotation = 180
         s = 1.0 / self.config.zoom
         p0 = 0.5 - s/2
@@ -75,6 +77,7 @@ class NightCam:
         except:
             logging.info('Failed to turn off LED. Oh well.')
         # self.camera.awb_mode = 'auto'
+        self.camera.exposure_mode='nightpreview'
 
     def stop_running(self):
         logging.info(f'Camera: stop running')
@@ -193,6 +196,7 @@ class NightCam:
 
                 self.camera.iso = self.iso
                 self.camera.shutter_speed = self.shutter
+                # self.camera.shutter_speed = 0
                 self.camera.framerate = self.framerate
 
                 logging.info(f'Sleep {self.config.sleep1} seconds to let camera calm itself')
