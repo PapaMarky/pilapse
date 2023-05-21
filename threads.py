@@ -373,7 +373,8 @@ class ImageConsumer(PilapseThread):
                 self.consume_image(image)
             else:
                 logging.debug(f'preconsume returned false.')
-
+        else:
+            time.sleep(0.001)
     def do_work(self) -> None:
         self.start_work()
         logging.info(f'Starting ImageConsumer (do_work) ({self.start_time.strftime("%Y/%m/%d %H:%M:%S")})')
