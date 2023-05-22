@@ -175,7 +175,7 @@ class ImageProducer(PilapseThread, Configurable):
         ImageProducer.ARGS_ADDED = True
         return parser
 
-    THROTTLE_DELAY = 0.01
+    THROTTLE_DELAY = 0.1
     def __init__(self, name:str, shutdown_event:threading.Event, config:argparse.Namespace, **kwargs):
         super(ImageProducer, self).__init__(name, shutdown_event, config, **kwargs)
         self.process_config(config)
