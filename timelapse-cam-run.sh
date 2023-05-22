@@ -9,6 +9,14 @@ if [[ ! -z $NFRAMES ]]; then
   CMD="$CMD --nframes $NFRAMES "
 fi
 
+if [[ ! -z $METER_MODE ]]; then
+  CMD="$CMD --meter-mode $METER_MODE "
+fi
+
+if [[ ! -z $EXPOSURE_MODE ]]; then
+  CMD="$CMD --exposure-mode $EXPOSURE_MODE "
+fi
+
 if [[ ! -z $TESTFRAME ]]; then
   CMD="$CMD --testframe "
 fi
@@ -19,7 +27,7 @@ fi
 
 echo "CMD: $CMD"
 
-$($CMD)
+$CMD
 
 #	--loglevel debug \
 #	--testframe \

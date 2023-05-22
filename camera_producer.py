@@ -39,6 +39,12 @@ class CameraProducer(ImageProducer):
                                 'Int value. Units is seconds. EX. Setting framerate to "3" will take a frame every'
                                 '3 seconds. Defaults to 0 which means "as fast as you can" ')
 
+        camera.add_argument('--exposure-mode', type=str, default='auto',
+                            help='Exposure mode. See '
+                                 'https://picamera.readthedocs.io/en/release-1.13/api_camera.html#picamera.PiCamera.exposure_mode')
+        camera.add_argument('--meter-mode', type=str, default='average',
+                            help='See '
+                                 'https://picamera.readthedocs.io/en/release-1.13/api_camera.html#picamera.PiCamera.meter_mode')
         camera.add_argument('--show-name', action='store_true',
                            help='Write a timestamp on each frame')
         camera.add_argument('--label-rgb', type=str,
@@ -78,7 +84,11 @@ class CameraProducer(ImageProducer):
         d1 = abs(ar-ar_16_9)
         d2 = abs(ar-ar_4_3)
         ar = '4:3' if d1 > d2 else '16:9'
-        self.camera:Camera = Camera(config.width, config.height, zoom=config.zoom, aspect_ratio=ar, pause=10)
+        self.camera:Camera = Camera(config.width, config.height,
+                                    zoom=config.zoom,
+                                    exposure_mode=config.exposure_mode,
+                                    meter_mode=config.meter_mode,
+                                    aspect_ratio=ar, pause=10)
         if self.config.framerate:
             self.config.framerate_delta = timedelta(seconds=config.framerate)
 
