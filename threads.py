@@ -552,7 +552,7 @@ class MotionPipeline(ImagePipeline):
         self.previous_image = self.current_image
         self.current_image = image
 
-        logging.info(f'Consuming image: {image.filename}, Q in: {self.in_queue.qsize()}')
+        logging.debug(f'Consuming image: {image.filename}, Q in: {self.in_queue.qsize()}')
         fname_base = self.current_image.base_filename
         new_name = f'{fname_base}_90.{self.current_image.type}' if self.config.save_diffs else f'{fname_base}.{self.current_image.type}'
         new_name_motion = f'{fname_base}_90M.{self.current_image.type}'
