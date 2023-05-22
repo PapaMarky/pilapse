@@ -143,7 +143,7 @@ class TimelapseApp(Configurable):
                     logging.exception(e)
 
                 break
-            time.sleep(1)
+            self._shutdown_event.wait(1)
         pl.die()
 
 def main():

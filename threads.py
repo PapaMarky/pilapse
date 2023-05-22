@@ -149,7 +149,7 @@ class PilapseThread(threading.Thread):
             self.excecption = e
 
     def signal_shutdown(self):
-        self._shutdown_event.set()
+        self.shutdown_event.set()
 
     def join(self):
         threading.Thread.join(self)
@@ -242,7 +242,7 @@ class ImageProducer(PilapseThread, Configurable):
                 self.add_to_out_queue(image)
             self.log_status()
             if self.throttled:
-                time.sleep(self.THROTTLE_DELAY)
+                self.shutdown_event.wait(self.THROTTLE_DELAY)
 
     def produce_image(self) -> str:
         raise Exception('Base class cannot produce images')
@@ -309,7 +309,7 @@ class DirectoryProducer(ImageProducer):
                 logging.info('Shutdown event received while processing new files')
                 break
             if self.throttled:
-                time.sleep(self.THROTTLE_DELAY)
+                self.shutdown_event.wait(self.THROTTLE_DELAY)
             self.now = datetime.now()
             if not self.new_file_queue.empty():
                 # get the new image, make sure we don't have it already, put it in the outgoing queue
@@ -430,7 +430,8 @@ class ImageConsumer(PilapseThread):
             else:
                 logging.debug(f'preconsume returned false.')
         else:
-            time.sleep(0.001)
+            self.shutdown_event.wait(0.001)
+
     def do_work(self) -> None:
         self.start_work()
         logging.info(f'Starting ImageConsumer (do_work) ({self.start_time.strftime("%Y/%m/%d %H:%M:%S")})')

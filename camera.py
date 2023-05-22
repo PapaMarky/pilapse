@@ -1,5 +1,6 @@
 import argparse
 import logging
+import threading
 import time
 
 from picamera.array import PiRGBArray
@@ -13,8 +14,7 @@ class Camera():
                  aspect_ratio='4:3',
                  exposure_mode='auto',
                  awb_mode='auto',
-                 meter_mode='average',
-                 pause=2):
+                 meter_mode='average'):
         self._model = None
         self._sensor_mode = None
         self._use_video_port = True
@@ -48,8 +48,6 @@ class Camera():
         logging.info(f' - aspect ratio: {aspect_ratio}')
         logging.info(f' -         zoom: {zoom}')
         logging.info(f' -     rotation: {rotation}')
-        logging.info(f'Sleeping for {pause} seconds to let the sensor find itself')
-        time.sleep(pause)
 
     def zoom_str(self) -> str:
         z = self.camera.zoom
