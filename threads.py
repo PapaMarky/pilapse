@@ -310,6 +310,8 @@ class DirectoryProducer(ImageProducer):
                 break
             if self.throttled:
                 self.shutdown_event.wait(self.THROTTLE_DELAY)
+                if self.shutdown_event.is_set():
+                    continue
             self.now = datetime.now()
             if not self.new_file_queue.empty():
                 # get the new image, make sure we don't have it already, put it in the outgoing queue

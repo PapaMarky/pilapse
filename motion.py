@@ -172,6 +172,9 @@ class MotionDetectionApp(Configurable):
 
                 break
             self._shutdown_event.wait(1)
+            if self._shutdown_event.is_set():
+                pl.set_time_to_die()
+                break
         pl.die()
 
 def main():

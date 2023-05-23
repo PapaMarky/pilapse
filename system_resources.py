@@ -67,8 +67,7 @@ class SystemResources:
                 status = 0
                 self.need_to_cool = False
             else:
-
-            message = f'GPU Temp: {v} ({t})'
+                message = f'GPU Temp: {v} ({t})'
             return status, message
         return status, message
 
