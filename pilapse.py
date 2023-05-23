@@ -77,7 +77,7 @@ def delete_pid_file():
 def die(status=0):
     logging.info(f'Time to die')
     delete_pid_file()
-    time.sleep(0.1)
+    time.sleep(0.1) # do not want this sleep to be interruptible
     sys.exit(status)
 
 logfile = os.environ.get('LOGFILE')

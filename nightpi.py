@@ -19,12 +19,15 @@ import os
 import signal
 import sys
 import logging
+import threading
 
 import pause
 from picamera import PiCamera
 import time
 from fractions import Fraction
 import datetime
+
+from scheduling import Schedule
 from suntime import Suntime
 
 location=(37.255329186920946, -121.94417304596949)
@@ -46,14 +49,16 @@ logging.basicConfig(
 )
 
 class NightCam:
-    def __init__(self):
+    def __init__(self, shutdown_event:threading.Event):
         logging.info('init NightCam')
         self.start_time = datetime.datetime.now()
+        self.shutdown_event = shutdown_event
         self.iso:int = 0
         self.shutter:int = 0
         self.nframes:int = 8
         self.parse_command_line()
         self.load_suntimes()
+        self.schedule = Schedule(self.config)
         self.camera:PiCamera = None
         self.running:bool = False
         self.create_camera()
@@ -139,7 +144,7 @@ class NightCam:
 
             if self.running:
                 logging.info(f'Sleeping until {next_frame_time}')
-                # time.sleep(self.config.sleep)
+                # TODO: rewrite "pause" that uses an Event.wait
                 pause.until(next_frame_time)
         self.destroy_camera()
 
@@ -200,7 +205,7 @@ class NightCam:
                 self.camera.framerate = self.framerate
 
                 logging.info(f'Sleep {self.config.sleep1} seconds to let camera calm itself')
-                time.sleep(self.config.sleep1)
+                self.shutdown_event.wait(self.config.sleep1)
                 self.camera.exposure_mode = 'off'
             else:
                 logging.info(f'- Camera settings unchanged.')
@@ -260,7 +265,7 @@ class NightCam:
                             help='force the framerate')
         parser.add_argument('--meter-mode', type=str, default='',
                             help='ADVANCED. Set the meter mode.')
-
+        Schedule.add_arguments_to_parser(parser)
         self.config = parser.parse_args()
         if self.config.logfile == 'stdout':
             self.config.logfile = None
@@ -288,12 +293,17 @@ class NightCam:
         return self.config.settings is None
 
 if __name__ == '__main__':
+    shutdown_event = threading.Event()
+
     print(f'Create the camera...')
-    night_camera = NightCam()
+    night_camera = NightCam(shutdown_event)
 
     print(f'Setup signal handling...')
+
+
     def exit_gracefully(signum, frame):
         logging.info(f'SHUTTING {get_program_name()} DOWN due to {signal.Signals(signum).name}')
+        shutdown_event.set()
         night_camera.stop_running()
 
     signal.signal(signal.SIGINT, exit_gracefully)

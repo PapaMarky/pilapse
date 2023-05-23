@@ -21,6 +21,7 @@ class SystemResources:
     LOW_V = '/sys/devices/platform/soc/soc:firmware/get_throttled'
     def __init__(self):
         self.not_pi:bool = False
+        self.need_to_cool = False
         # remember the model
         with open('/proc/device-tree/model') as f:
             self._model:str = f.read()
@@ -52,13 +53,21 @@ class SystemResources:
         status = 0
         message = 'no issues found'
         v, t = self.check_gpu_temp()
+        # v will be one of "not Pi", cool, safe, warm, hot, dangerous
         if v != 'not Pi':
+            if v == 'dangerous':
+                status = 2
             if v == 'warm' or v == 'hot':
                 status = 1
+                self.need_to_cool = True
+            elif v == 'safe':
+                status = 1 if self.need_to_cool else 0
                 message = f'GPU Temp: {v}'
-            elif v != 'safe':
-                status = 2
-                message = f'GPU Temp: {v}'
+            elif v == 'cool':
+                status = 0
+                self.need_to_cool = False
+            else:
+                message = f'GPU Temp: {v} ({t})'
             return status, message
         return status, message
 
@@ -89,14 +98,17 @@ class SystemResources:
         t = self.get_gpu_temp()
         if t is None:
             return 'not Pi', 0
+        if t < 75:
+            return 'cool', t
         if t < 80:
             return 'safe', t
         if t < 83:
             return 'warm', t
-        if t < 84:
+        if t < 85:
             return 'hot', t
         if t >= 85:
             return 'dangerous', t
+        return 'crazy', t
 
     def get_gpu_temp(self):
         if self.not_pi:

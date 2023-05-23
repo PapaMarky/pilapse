@@ -149,7 +149,7 @@ class PilapseThread(threading.Thread):
             self.excecption = e
 
     def signal_shutdown(self):
-        self._shutdown_event.set()
+        self.shutdown_event.set()
 
     def join(self):
         threading.Thread.join(self)
@@ -175,7 +175,7 @@ class ImageProducer(PilapseThread, Configurable):
         ImageProducer.ARGS_ADDED = True
         return parser
 
-    THROTTLE_DELAY = 0.01
+    THROTTLE_DELAY = 0.1
     def __init__(self, name:str, shutdown_event:threading.Event, config:argparse.Namespace, **kwargs):
         super(ImageProducer, self).__init__(name, shutdown_event, config, **kwargs)
         self.process_config(config)
@@ -242,7 +242,7 @@ class ImageProducer(PilapseThread, Configurable):
                 self.add_to_out_queue(image)
             self.log_status()
             if self.throttled:
-                time.sleep(self.THROTTLE_DELAY)
+                self.shutdown_event.wait(self.THROTTLE_DELAY)
 
     def produce_image(self) -> str:
         raise Exception('Base class cannot produce images')
@@ -309,7 +309,9 @@ class DirectoryProducer(ImageProducer):
                 logging.info('Shutdown event received while processing new files')
                 break
             if self.throttled:
-                time.sleep(self.THROTTLE_DELAY)
+                self.shutdown_event.wait(self.THROTTLE_DELAY)
+                if self.shutdown_event.is_set():
+                    continue
             self.now = datetime.now()
             if not self.new_file_queue.empty():
                 # get the new image, make sure we don't have it already, put it in the outgoing queue
@@ -430,7 +432,8 @@ class ImageConsumer(PilapseThread):
             else:
                 logging.debug(f'preconsume returned false.')
         else:
-            time.sleep(0.001)
+            self.shutdown_event.wait(0.001)
+
     def do_work(self) -> None:
         self.start_work()
         logging.info(f'Starting ImageConsumer (do_work) ({self.start_time.strftime("%Y/%m/%d %H:%M:%S")})')
@@ -552,7 +555,7 @@ class MotionPipeline(ImagePipeline):
         self.previous_image = self.current_image
         self.current_image = image
 
-        logging.info(f'Consuming image: {image.filename}, Q in: {self.in_queue.qsize()}')
+        logging.debug(f'Consuming image: {image.filename}, Q in: {self.in_queue.qsize()}')
         fname_base = self.current_image.base_filename
         new_name = f'{fname_base}_90.{self.current_image.type}' if self.config.save_diffs else f'{fname_base}.{self.current_image.type}'
         new_name_motion = f'{fname_base}_90M.{self.current_image.type}'

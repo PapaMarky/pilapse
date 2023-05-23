@@ -88,14 +88,15 @@ class CameraProducer(ImageProducer):
                                     zoom=config.zoom,
                                     exposure_mode=config.exposure_mode,
                                     meter_mode=config.meter_mode,
-                                    aspect_ratio=ar, pause=10)
+                                    aspect_ratio=ar)
         if self.config.framerate:
             self.config.framerate_delta = timedelta(seconds=config.framerate)
 
         self.nextframe_time = self.now
         self.schedule = Schedule(self.config)
-
-        time.sleep(10) # let the camera self calibrate
+        pause = 10.0
+        logging.info(f'Sleeping for {pause} seconds to let the sensor find itself')
+        shutdown_event.wait(pause) # let the camera self calibrate
 
     def get_camera_model(self):
         return self.camera.model
@@ -123,7 +124,7 @@ class CameraProducer(ImageProducer):
 
     def check_run_until(self):
         if self.schedule.paused:
-            time.sleep(1)
+            self.shutdown_event.wait(1)
             return False
         return True
 
@@ -154,7 +155,7 @@ class CameraProducer(ImageProducer):
         if not self.shutdown_event.is_set():
             if self.out_queue.full():
                 logging.warning('Output Queue is full')
-                time.sleep(0.001)
+                self.shutdown_event.wait(0.001)
                 return
             img = CameraImage(self.camera.capture(), prefix=self.prefix, type='png')
             logging.debug(f'captured {img.base_filename}')
