@@ -3,6 +3,9 @@
 import argparse
 import signal
 from datetime import datetime, timedelta
+
+import psutil
+
 from config import Config
 
 import cv2
@@ -54,7 +57,19 @@ def create_pid_file():
     pidfile = get_pid_file()
     if os.path.exists(pidfile):
         logging.error('PID file exists. Already running?')
-        return False
+        pid_in_use = True
+        with open(pidfile) as f:
+            pid = f.read().strip()
+            try:
+                pid = int(pid)
+                if not psutil.pid_exists(pid):
+                    logging.info(f'No process is using that PID ({pid}). Taking over the file')
+                    pid_in_use = False
+            except:
+                logging.warning(f'PID in file is bad. Taking over the file.')
+                pid_in_use = False
+        if pid_in_use:
+            return False
     with open(get_pid_file(), 'w') as pidout:
         pid = os.getpid()
         logging.info(f'saving PID ({pid}) in {pidfile}')
