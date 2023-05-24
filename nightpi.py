@@ -51,6 +51,7 @@ logging.basicConfig(
 class NightCam:
     def __init__(self, shutdown_event:threading.Event):
         logging.info('init NightCam')
+        self._model = None
         self.start_time = datetime.datetime.now()
         self.shutdown_event = shutdown_event
         self.iso:int = 0
@@ -63,15 +64,34 @@ class NightCam:
         self.running:bool = False
         self.create_camera()
 
+
     def load_suntimes(self):
         self.suntimes = Suntime(location)
+
+    def camera_model(self) -> str:
+        if self._model:
+            return self._model
+
+        rev = self.camera.revision
+        known = {
+            'ov5647': 'V1',
+            'imx219': 'V2'
+        }
+        if rev in known:
+            rev = known[rev]
+
+
+        self._model = rev
+        return self._model
 
     # TODO: Use camera_producer model.
     def create_camera(self):
         logging.info('create PiCamera')
-        self.camera = PiCamera(framerate_range=(1/10, 30),
-                               sensor_mode=1
+        self.camera = PiCamera(framerate_range=(1/10, 40),
+                               resolution=(self.config.width,self.config.height),
+                               sensor_mode=5
                                )
+        logging.info(f'Model: {self.camera_model()}')
         self.camera.rotation = 180
         s = 1.0 / self.config.zoom
         p0 = 0.5 - s/2
@@ -169,8 +189,10 @@ class NightCam:
         if not os.path.exists(os.path.dirname(outfile)):
             print(f'- create dir: {os.path.dirname(outfile)}')
             os.makedirs(os.path.dirname(outfile))
+
         logging.info(f'Taking picture... ({outfile})')
-        self.camera.capture(outfile)
+        self.camera.capture(outfile, use_video_port=True)
+
         logging.info(f'Done. (elapsed: {datetime.datetime.now() - cur_time})')
         logging.info(f'AWB MODE: {self.camera.awb_mode} BRIGHTNESS: {self.camera.brightness} '
                      f'CONTRAST: {self.camera.contrast}')
@@ -181,28 +203,33 @@ class NightCam:
         logging.info(f'exposure_speed: {self.camera.exposure_speed}, framerate_range: {self.camera.framerate_range}, '
                      f'framerate: {self.camera.framerate}')
         logging.info(f'meter_mode: {self.camera.meter_mode}, sensor_mode: {self.camera.sensor_mode}')
+
     def update_camera(self):
         logging.info(f'Updating Camera settings...')
         if self.camera is None:
             self.create_camera()
 
         if self.camera is not None:
-            iso, shutter, framerate = self.calculate_camera_settings()
+            # shutter speed is microseconds (seconds * 1,000,000)
+            # framerate will limit shutter speed.
+            iso, shutter = self.calculate_camera_settings()
             # TODO: include framerate in the "has it changed" calculations
+            # calculate framerate from shutter so they match
             if (self.single_shot and (self.iso != iso or self.shutter != shutter) ) or abs(self.iso - iso) > 10 or abs(self.shutter - shutter) > 10000:
                 # TODO: should I turn exposure mode on before doing these things?
-                logging.info(f' - Camera settings changed: iso: {iso}, shutter speed: {shutter}, framerate: {framerate}')
+                logging.info(f' - Camera settings changed: iso: {iso}, shutter speed: {shutter}, framerate: {self.camera.framerate}')
                 if self.config.meter_mode != '':
                     logging.info(f'   meter mode: {self.config.meter_mode}')
                     self.camera.meter_mode = self.config.meter_mode
                 self.iso = iso
                 self.shutter = shutter
-                self.framerate = framerate
+                # self.framerate = framerate
 
                 self.camera.iso = self.iso
                 self.camera.shutter_speed = self.shutter
                 # self.camera.shutter_speed = 0
-                self.camera.framerate = self.framerate
+                # self.camera.framerate = self.framerate
+                # we set the framerate range
 
                 logging.info(f'Sleep {self.config.sleep1} seconds to let camera calm itself')
                 self.shutdown_event.wait(self.config.sleep1)
@@ -217,20 +244,16 @@ class NightCam:
             p0, p1, pct = self.suntimes.get_part_of_day_percent()
             iso0 = self.config.camera_settings[p0]['iso']
             shutter0 = self.config.camera_settings[p0]['shutter']
-            framerate0 = self.config.camera_settings[p0]['framerate']
 
             iso1 = self.config.camera_settings[p1]['iso']
             shutter1 = self.config.camera_settings[p1]['shutter']
-            framerate1 = self.config.camera_settings[p1]['framerate']
 
             iso = int(iso0) if iso0 == iso1 else int(iso0 + (iso1 - iso0) * pct)
             shutter = int(shutter0) if shutter0 == shutter1 else int(shutter0 + (shutter1 - shutter0) * pct)
-            framerate = framerate0 if framerate0 == framerate1 else framerate0 + (framerate1 - framerate0) * pct
 
             logging.info(f'      ISO: {iso0} - {iso1} ({pct:.4f}) {iso}')
             logging.info(f'  SHUTTER: {shutter0} - {shutter1} ({pct:.4f}) {shutter}')
-            logging.info(f'FRAMERATE: {framerate0} - {framerate1}: {framerate}')
-            return (iso, shutter, framerate)
+            return (iso, shutter)
 
     def parse_command_line(self):
         parser = argparse.ArgumentParser('Test Low Light long exposure')
@@ -244,6 +267,8 @@ class NightCam:
         Valid values are between 0 (auto) and 1600. The actual value used when iso is explicitly set will be one of 
         the following values (whichever is closest): 100, 200, 320, 400, 500, 640, 800.
         '''
+        parser.add_argument('--width', type=int, help='width of created images', default=1920)
+        parser.add_argument('--height', type=int, help='height of created images', default=1080)
         parser.add_argument('--zoom', type=float, help='Zoom factor. Must be greater than 1.0', default=1.0)
         parser.add_argument('--sleep', type=float, help='Number of seconds to sleep between pictures', default=30.0)
         parser.add_argument('--settings', type=str,

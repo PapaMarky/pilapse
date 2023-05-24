@@ -102,8 +102,8 @@ class Schedule(Configurable):
         :param now: Current Time (or time to check)
         :return:
         """
+        current_time = now.time()
         if self.run_until is not None and not self.paused:
-            current_time = now.time()
             if current_time >= self.run_until or current_time <= self.run_from:
                 logging.info(f'Pausing because outside run time: from {self.run_from} until {self.run_until}')
                 self.paused = True
