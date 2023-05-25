@@ -63,7 +63,7 @@ class Image():
 
     @property
     def base_filename(self):
-        return f'{self._prefix}_{self.timestamp_file}'
+        return f'{self.timestamp_file}_{self._prefix}'
 
     @property
     def filename(self):
@@ -91,16 +91,17 @@ class FileImage(Image):
         :param path: full path to the image file. Expected format: "PATH/PREFIX_YYYYMMDD_HHMMSS.ssssss.TYPE"
         """
         filename = os.path.basename(path)
-        # groups: 1 = prefix, 2 = timestamp, 3 = type (extension)
-        regex = r'([^_]+?)_([0-9]+?_[0-9]+?\.[0-9]+?)(_.*?)?\.(.+)'
+        # groups: 2 = prefix, 1 = timestamp, 3 = type (extension)
+        # regex = r'([^_]+?)_([0-9]+?_[0-9]+?\.[0-9]+?)(_.*?)?\.(.+)'
+        regex = r'([0-9]+?_[0-9]+?\.[0-9]+?)_([^_]+?)(_.*?)?\.(.+)'
         m = re.match(regex, os.path.basename(filename))
         # 20230429/picam001_20230429_192140.054980.png
         # picam002_20230508_053200.835233.png
         if not m:
             raise Exception(f'Bad filename format: {path}')
         super().__init__(path=path, type=m.group(4) )
-        self._timestamp = datetime.strptime(m.group(2), self.timestamp_pattern)
-        self._prefix = m.group(1)
+        self._timestamp = datetime.strptime(m.group(1), self.timestamp_pattern)
+        self._prefix = m.group(2)
         self._suffix = m.group(3)
         self._image = image
 
