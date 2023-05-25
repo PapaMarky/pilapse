@@ -10,6 +10,18 @@ if [[ ! -z $TESTFRAME ]]; then
   "
 fi
 
+if [[ ! -z $NFRAMES ]]; then
+  CMD="$CMD --nframes $NFRAMES "
+fi
+
+if [[ ! -z $RUN_FROM ]]; then
+  CMD="$CMD --run-from $RUN_FROM "
+fi
+
+if [[ ! -z $RUN_UNTIL ]]; then
+  CMD="$CMD --run-until $RUN_UNTIL "
+fi
+
 if [[ ! -z $SHOWMOTION ]]; then
   CMD="$CMD --show-motion \
   "

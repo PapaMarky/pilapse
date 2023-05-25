@@ -55,12 +55,13 @@ class Schedule(Configurable):
 
         self.run_from:time = None
         if config.run_from is not None:
-            logging.debug(f'Setting run-until: {config.run_from}')
+            logging.info(f'Setting run-from: {config.run_from}')
             try:
                 self.run_from = datetime.strptime(config.run_from, '%H:%M:%S').time()
             except Exception as e:
                 logging.exception('Exception while parsing "run_from" ({config.run_from})')
                 raise e
+            logging.info(f' - run-from is {self.run_from}')
 
         self.run_until:time = None
         if config.run_until is not None:
@@ -70,6 +71,7 @@ class Schedule(Configurable):
             except Exception as e:
                 logging.exception(f'Exception while parsing "run_until" ({config.run_until})')
                 raise e
+            logging.info(f' - run-until is {self.run_until}')
 
     @property
     def paused(self):
@@ -84,10 +86,11 @@ class Schedule(Configurable):
         Update state of "paused" and "stopped". Should be called at beginning of client's loop.
         :return:
         """
-        self._check_paused()
-        self._check_stop_at()
+        now = datetime.now()
+        self._check_paused(now)
+        self._check_stop_at(now)
 
-    def _check_stop_at(self, now:datetime = datetime.now()):
+    def _check_stop_at(self, now:datetime):
         """
         Update "stopped" based on "stop_at"
         :param now: Current time (or time to check)
@@ -96,18 +99,19 @@ class Schedule(Configurable):
         if self.stop_at is not None and now > self.stop_at:
             self._stopped = True
 
-    def _check_paused(self, now:datetime = datetime.now()):
+    def _check_paused(self, now:datetime):
         """
         Update "paused" state based on "run_from" and "run_until"
         :param now: Current Time (or time to check)
         :return:
         """
         current_time = now.time()
+        logging.debug(f'current time: {current_time}, from {self.run_from}, until {self.run_until}')
         if self.run_until is not None and not self.paused:
             if current_time >= self.run_until or current_time <= self.run_from:
                 logging.info(f'Pausing because outside run time: from {self.run_from} until {self.run_until}')
-                self.paused = True
+                self._paused = True
         if self.paused:
             if current_time >= self.run_from and current_time <= self.run_until:
                 logging.info(f'Ending pause because inside run time: from {self.run_from} until {self.run_until}')
-                self.paused = False
+                self._paused = False
