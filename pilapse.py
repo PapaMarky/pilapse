@@ -42,6 +42,7 @@ MAGENTA = BGR(255, 0, 255)
 YELLOW = BGR(255, 255, 0)
 ORANGE = BGR(255,165,0)
 WHITE = BGR(255, 255, 255)
+BLACK = BGR(0, 0, 0)
 
 def get_program_name():
     name = os.path.basename(sys.argv[0])
@@ -222,7 +223,7 @@ class PilapseConfig(Config):
 
 def annotate_frame(image, annotaton, config):
     if annotaton:
-        text_height = int(config.height / 40)
+        text_height = int(config.height / 35)
         thickness = int(config.height * 1/480)
         if thickness < 1:
             thickness = 1
@@ -231,6 +232,8 @@ def annotate_frame(image, annotaton, config):
         size, baseline = cv2.getTextSize(annotaton, font, 1, 3)
         scale = text_height / size[1]
         color = config.label_rgb if config.label_rgb is not None else ORANGE
+        # first write with greater thickness to create constrasting outline
+        cv2.putText(image, annotaton, pos, font, scale, thickness=thickness+1, color=BLACK)
         cv2.putText(image, annotaton, pos, font, scale, thickness=thickness, color=color)
         return text_height
 
