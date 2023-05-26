@@ -25,6 +25,8 @@ class SystemResources:
         # remember the model
         with open('/proc/device-tree/model') as f:
             self._model:str = f.read()
+            if self._model.endswith('\x00'):
+                self._model = self._model[:-1]
 
     @property
     def model(self):
