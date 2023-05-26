@@ -193,7 +193,7 @@ class ImageProducer(PilapseThread, Configurable):
         elapsed_str = str(elapsed).split('.')[0]
         # TODO: nframes is owned by ImageProducer
         FPS = self.nframes_count / elapsed.total_seconds()
-        logging.info(f'{elapsed_str} frames: {self.nframes_count} FPS: {FPS:.2f}')
+        logging.info(f'{elapsed_str} frames: {self.nframes_count} FPS: {FPS:.2f}, Qout: {self.out_queue.qsize()}')
 
     def preproduce(self):
         logging.debug(f'ImageProducer preproduce')

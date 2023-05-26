@@ -114,12 +114,9 @@ class CameraProducer(ImageProducer):
             t = m.group(1) if m is not None else ''
 
             # logging.info(f'# {os.uname()[1]}: CPU {psutil.cpu_percent()}%, mem {psutil.virtual_memory().percent}%, TEMP CPU: {temp:.1f}C GPU: {t}C')
-            logging.info(f'{self.system.model}')
-            logging.info(f'Camera Model: {self.get_camera_model()}')
+            logging.info(f'{self.system.model}, Camera Model: {self.get_camera_model()}')
             super().log_status()
-            logging.info(f'Qout: {self.out_queue.qsize()}, '
-                         f'Paused: {"T" if self.schedule.paused else "F"}')
-            logging.info(f'{self.system.status_string()}, throttling: {self.throttled}')
+            logging.info(f'{self.system.status_string()}, throttling: {self.throttled}, Paused: {self.schedule.paused}')
             self.report_time = self.report_time + self.report_wait
 
     def check_run_until(self):
