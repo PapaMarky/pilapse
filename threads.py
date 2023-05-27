@@ -97,6 +97,7 @@ class FileImage(Image):
         m = re.match(regex, os.path.basename(filename))
         # 20230429/picam001_20230429_192140.054980.png
         # picam002_20230508_053200.835233.png
+        # 20230526_144349.20090p2_picam001.png
         if not m:
             raise Exception(f'Bad filename format: {path}')
         super().__init__(path=path, type=m.group(4) )
@@ -528,8 +529,11 @@ class MotionPipeline(ImagePipeline):
         logging.debug(f'MotionPipeline init {self.name}')
         self.current_image:Image = None
         self.previous_image:Image = None
+        self.previous_image_name:str = None
         self.count:int = 0
         self.paused:bool = False
+        self.motion_end:datetime = None
+        self.motion_wait:timedelta = timedelta(seconds=3)
 
         if self.config.label_rgb is not None:
             (R,G,B) = self.config.label_rgb.split(',')
@@ -596,9 +600,25 @@ class MotionPipeline(ImagePipeline):
                 if motion_detected:
                     new_name = new_name_motion
                     logging.info(f'Motion Detected: {new_name}')
-                else:
-                    # logging.debug('No Motion Detected')
-                    pass
+                    if self.motion_end is None:
+                        logging.debug(f'New motion detected, saving previous frame for context')
+                        copy = self.previous_image.image.copy()
+                        pl.annotate_frame(copy, annotatation, self.config)
+
+                        path = os.path.join(self.outdir, self.previous_image_name)
+                        self.add_to_out_queue(FileImage(path, image=copy))
+                    self.motion_end = datetime.now() + self.motion_wait
+                elif self.motion_end is not None:
+                        if datetime.now() <= self.motion_end:
+                            logging.debug(f'No new motion detected but still waiting. end time: {self.motion_end}')
+
+                            copy = self.current_image.image.copy()
+                            pl.annotate_frame(copy, annotatation, self.config)
+
+                            path = os.path.join(self.outdir, new_name_motion.replace('90M', '90m'))
+                            self.add_to_out_queue(FileImage(path, image=copy))
+                        else:
+                            self.motion_end = None
 
                 if img_out is not None:
                     logging.debug(f'{new_name}')
@@ -615,6 +635,7 @@ class MotionPipeline(ImagePipeline):
                     self.add_to_out_queue(self.current_image)
                     # cv2.imwrite(path, self.current_image.image)
 
+        self.previous_image_name = new_name_motion.replace('_90M', '_90p')
 
     def compare_images(self):
         original = self.previous_image.image
