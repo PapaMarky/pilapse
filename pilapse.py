@@ -223,7 +223,7 @@ class PilapseConfig(Config):
 
 def annotate_frame(image, annotaton, config):
     if annotaton:
-        text_height = int(config.height / 35)
+        text_height = int(config.height / 25)
         thickness = int(config.height * 1/480)
         if thickness < 1:
             thickness = 1
@@ -233,7 +233,7 @@ def annotate_frame(image, annotaton, config):
         scale = text_height / size[1]
         color = config.label_rgb if config.label_rgb is not None else ORANGE
         # first write with greater thickness to create constrasting outline
-        cv2.putText(image, annotaton, pos, font, scale, thickness=thickness+1, color=BLACK)
+        cv2.putText(image, annotaton, pos, font, scale, thickness=thickness+2, color=WHITE)
         cv2.putText(image, annotaton, pos, font, scale, thickness=thickness, color=color)
         return text_height
 
