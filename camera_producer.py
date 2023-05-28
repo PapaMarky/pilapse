@@ -24,6 +24,12 @@ class CameraProducer(ImageProducer):
     #    - nframes
     # or move that control into app?
     ARGS_ADDED = False
+
+    # Shutdown after MAX_CAPTURE_EXCEPTIONS consecutive exceptions
+    MAX_CAPTURE_EXCEPTIONS = 10
+
+    # Shutdown after MAX_CAPTURE_EXCEPTIONS_TOTAL total exceptions
+    MAX_CAPTURE_EXCEPTIONS_TOTAL = 100
     @classmethod
     def add_arguments_to_parser(cls, parser:argparse.ArgumentParser, argument_group_name:str= 'Camera Settings')->argparse.ArgumentParser:
         logging.debug(f'Adding CameraProducer({cls}) args (ADDED: {CameraProducer.ARGS_ADDED})')
@@ -98,6 +104,12 @@ class CameraProducer(ImageProducer):
         logging.info(f'Sleeping for {pause} seconds to let the sensor find itself')
         shutdown_event.wait(pause) # let the camera self calibrate
 
+        # we ignore exceptions from image capture. Use this value and MAX_CAPTURE_EXCEPTION
+        # so that if the camera goes completely bonkers we shutdown cleanly instead of looping
+        # out of control forever.
+        self.capture_exception_count = 0
+        self.capture_exception_count_total = 0
+
     def get_camera_model(self):
         return self.camera.model
 
@@ -154,9 +166,31 @@ class CameraProducer(ImageProducer):
                 logging.warning('Output Queue is full')
                 self.shutdown_event.wait(0.001)
                 return
-            img = CameraImage(self.camera.capture(), prefix=self.prefix, type='png')
-            logging.debug(f'captured {img.base_filename}')
-            self.add_to_out_queue(img)
+            try:
+                img = CameraImage(self.camera.capture(), prefix=self.prefix, type='png')
+                logging.debug(f'captured {img.base_filename}')
+                self.add_to_out_queue(img)
+                # reset consecutive exception counter
+                self.capture_exception_count = 0
+            except Exception as e:
+                # if we get more than MAX_CAPTURE_EXCEPTIONS in a row, assume that something unrecoverable has gone
+                # wrong, and shutdown
+                self.capture_exception_count += 1
+                if self.capture_exception_count > self.MAX_CAPTURE_EXCEPTIONS:
+                    logging.error(f'Too many concecutive exceptions during image capture')
+                    raise e
+
+                # if we get more than MAX_CAPTURE_EXCEPTIONS_TOTAL, assume the camera has problems
+                # and shutdown
+                self.capture_exception_count_total += 1
+                if self.capture_exception_count_total > self.MAX_CAPTURE_EXCEPTIONS_TOTAL:
+                    logging.error(f'Too many total exceptions during image capture')
+                    raise e
+
+                logging.exception(f'Exception capturing image: {e}')
+                # give the camera some time (arbitrary) to recover from the error
+                self.shutdown_event.wait(0.1)
+                return
 
             if self.config.framerate:
                 logging.debug(f'now: {self.now}, delta: {self.config.framerate_delta}')
