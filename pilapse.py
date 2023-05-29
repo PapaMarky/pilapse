@@ -14,6 +14,7 @@ import os
 import sys
 import time
 
+# TODO Incorporate all of this "time to die" stuff into App class so it can have access to the shutdown event
 time_to_die = False
 def it_is_time_to_die():
     logging.debug(f'Is it time_to_die?: {time_to_die}')
@@ -221,20 +222,37 @@ class PilapseConfig(Config):
         return config
 
 
-def annotate_frame(image, annotaton, config):
-    if annotaton:
-        text_height = int(config.height / 25)
-        thickness = int(config.height * 1/480)
+def annotate_frame(image, annotation, config, position='ul', text_size:float = 1.0):
+    if annotation:
+        text_height = int(config.height / 25 * text_size)
+        thickness = int(config.height * 1/480 * text_size)
         if thickness < 1:
             thickness = 1
-        pos = (text_height, 2 * text_height)
+
         font = cv2.FONT_HERSHEY_SIMPLEX
-        size, baseline = cv2.getTextSize(annotaton, font, 1, 3)
-        scale = text_height / size[1]
+        text_size, baseline = cv2.getTextSize(annotation, font, 1, 3)
+
+        image_h, image_w, _ = image.shape
+        x = text_height
+        y = 2 * text_height
+
+        logging.info(f'pos: {position}, str: "{annotation}"')
+        if position[1] in 'lL':
+            x = text_height
+        elif position[1] in 'rR':
+            x = image_w - (text_height + text_size[0])
+
+        if position[0] in 'uUtT':
+            y = 2 * text_height
+        elif position[0] in 'lLbB':
+            y = image_h - 2 * text_height
+
+        origin = (int(x), int(y))
+        scale = text_height / text_size[1]
         color = config.label_rgb if config.label_rgb is not None else ORANGE
         # first write with greater thickness to create constrasting outline
-        cv2.putText(image, annotaton, pos, font, scale, thickness=thickness+2, color=WHITE)
-        cv2.putText(image, annotaton, pos, font, scale, thickness=thickness, color=color)
+        cv2.putText(image, annotation, origin, font, scale, WHITE, thickness=thickness + 2)
+        cv2.putText(image, annotation, origin, font, scale, color, thickness=thickness)
         return text_height
 
 def setup_camera(camera, config):

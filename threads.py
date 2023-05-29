@@ -16,6 +16,8 @@ import watchdog.events
 import watchdog.observers
 import cv2
 import imutils
+
+import pilapse
 import pilapse as pl
 
 import time
@@ -118,8 +120,35 @@ class FileImage(Image):
         return self._image
 
 class CameraImage(Image):
-    def __init__(self, image, prefix='snap', type='png'):
-        super().__init__(image=image, prefix=prefix, type=type)
+    def __init__(self, image, prefix='snap', type='png', timestamp=None):
+        super().__init__(image=image, prefix=prefix, type=type, timestamp=timestamp)
+        self.data = None
+
+    @property
+    def camera_settings(self):
+        return self.data
+
+    def copy_camera_settings(self, settings):
+        '''
+        this is meant to be used when making a copy of a CameraImage (for processing, etc) so that we can
+        keep the settings after working on the image
+        :param settings:
+        :return:
+        '''
+        self.data = settings
+
+    def set_camera_data(self, shutter_speed, iso, aperture, awb_mode, meter_mode, exposure_mode,
+                        analog_gain, digital_gain):
+        self.data = {
+            'shutter-speed': shutter_speed,
+            'iso': iso,
+            'aperture': aperture,
+            'awb-mode': awb_mode,
+            'meter-mode': meter_mode,
+            'exposure-mode': exposure_mode,
+            'analog-gain': analog_gain,
+            'digital-gain': digital_gain
+        }
 
 class PilapseThread(threading.Thread):
     def __init__(self, piname, shutdown_event:threading.Event, config:argparse.Namespace, **kwargs):
@@ -472,10 +501,19 @@ class ImageWriter(ImageConsumer):
     def add_arguments_to_group(cls, group:argparse.ArgumentParser):
         group.add_argument('--prefix', type=str, default='motion',
                             help='Prefix frame filenames with this string')
+        group.add_argument('--show-camera-settings', action='store_true',
+                           help='If the image is a CameraImage and the image has camera settings, '
+                                'annotate the image with those settings'
+                           )
 
     def __init__(self, shutdown_event:threading.Event, config:argparse.Namespace, **kwargs):
         super(ImageWriter, self).__init__('ImageWriter', shutdown_event, config, **kwargs)
-        logging.debug(f'ImageWriter init {self.name}')
+        logging.info(f'ImageWriter init {self.name} ({self})')
+        logging.info(f'LABEL_RGB: {self.config.label_rgb}')
+        if self.config.label_rgb is not None:
+            (R,G,B) = self.config.label_rgb.split(',')
+            self.config.label_rgb = BGR(int(R), int(G), int(B))
+            logging.info(f'FIXED label rgb: {self.config.label_rgb}')
 
     def do_work(self) -> None:
         self.start_work()
@@ -492,9 +530,17 @@ class ImageWriter(ImageConsumer):
 
     def consume_image(self, image):
         path = image.filepath
+        logging.info(f'Input image type: {type(image)}  ({self})')
         if isinstance(image, CameraImage):
             path = os.path.join(self.outdir, image.filename)
-        logging.info(f'ImageWriter: writing %s', path)
+            if self.config.show_camera_settings is not None and image.camera_settings is not None:
+                settings = image.camera_settings
+                pilapse.annotate_frame(image.image,
+                                       f'shutter speed: {settings["shutter-speed"]:.4f} iso: {settings["iso"]} '
+                                       f'digital gain: {settings["digital-gain"]:.4f} analog gain: {settings["analog-gain"]:.4f}',
+                                       self.config,
+                                       position='ll', text_size=0.5)
+        logging.info(f'## writing {path}')
         cv2.imwrite(path, image.image)
 
 class ImagePipeline(ImageProducer, ImageConsumer):
@@ -538,6 +584,7 @@ class MotionPipeline(ImagePipeline):
         if self.config.label_rgb is not None:
             (R,G,B) = self.config.label_rgb.split(',')
             self.config.label_rgb = BGR(int(R), int(G), int(B))
+            logging.info(f'MOTION: Fixed label rgb: {self.config.label_rgb}')
 
     def preconsume(self) -> bool:
         # If nframes is set, have we exceeded it?
@@ -593,7 +640,13 @@ class MotionPipeline(ImagePipeline):
                 path = os.path.join(self.outdir, new_name_motion)
                 path = path.replace('90M', '90MT')
                 logging.debug(f'Writing Test Image: {path}')
-                self.add_to_out_queue(FileImage(path, image=copy))
+                # TODO: need to pay attention to whether or not the incoming image is from a camera
+                if isinstance(image, CameraImage):
+                    test_image = CameraImage(copy, prefix=self.config.prefix, timestamp=image.timestamp)
+                    test_image.copy_camera_settings(image.camera_settings)
+                else:
+                    test_image = FileImage(path, image=copy)
+                self.add_to_out_queue(test_image)
                 # cv2.imwrite(path, copy)
         elif self.previous_image is not None and self.current_image is not None:
                 img_out, motion_detected = self.compare_images()

@@ -33,13 +33,17 @@ if [[ ! -z $SHOWNAME ]]; then
   CMD="$CMD --show-name "
 fi
 
+if [[ ! -z $SHOW_CAMERA_SETTINGS ]]; then
+  CMD="$CMD --show-camera-settings \
+  "
+fi
+
 echo "CMD: $CMD"
 
 $CMD
 
 #	--loglevel debug \
 #	--testframe \
-#	--nframes 3 \
 #	--save-diffs \
 #	--debug \
 #	--stop-at '20:30:00' \

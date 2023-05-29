@@ -26,8 +26,14 @@ if [[ ! -z $SHOWMOTION ]]; then
   CMD="$CMD --show-motion \
   "
 fi
+
 if [[ ! -z $SHOWNAME ]]; then
   CMD="$CMD --show-name \
+  "
+fi
+
+if [[ ! -z $SHOW_CAMERA_SETTINGS ]]; then
+  CMD="$CMD --show-camera-settings \
   "
 fi
 

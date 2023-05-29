@@ -49,6 +49,10 @@ class Camera():
         logging.info(f' -         zoom: {zoom}')
         logging.info(f' -     rotation: {rotation}')
 
+    @property
+    def picamera(self):
+        return self.camera
+
     def zoom_str(self) -> str:
         z = self.camera.zoom
         return f'({z[0]:.2f}, {z[1]:.2f}, {z[2]:.2f}, {z[3]:.2f})'

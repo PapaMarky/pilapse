@@ -103,6 +103,8 @@ class CameraProducer(ImageProducer):
         pause = 10.0
         logging.info(f'Sleeping for {pause} seconds to let the sensor find itself')
         shutdown_event.wait(pause) # let the camera self calibrate
+        if shutdown_event.is_set():
+            logging.info('shutdown event received while waiting for camera')
 
         # we ignore exceptions from image capture. Use this value and MAX_CAPTURE_EXCEPTION
         # so that if the camera goes completely bonkers we shutdown cleanly instead of looping
@@ -112,6 +114,11 @@ class CameraProducer(ImageProducer):
 
     def get_camera_model(self):
         return self.camera.model
+
+    @property
+    def aperture(self):
+        # always the same. Probably
+        return 2.8
 
     def log_status(self):
         # logging.info(f'LOG STATUS: now: {self.now}, report time: {self.report_time}')
@@ -167,7 +174,15 @@ class CameraProducer(ImageProducer):
                 self.shutdown_event.wait(0.001)
                 return
             try:
-                img = CameraImage(self.camera.capture(), prefix=self.prefix, type='png')
+                img = CameraImage(self.camera.capture(), prefix=self.prefix, type='jpg')
+                img.set_camera_data(self.camera.picamera.exposure_speed/1000000,
+                                    self.camera.picamera.ISO,
+                                    self.aperture,
+                                    self.camera.picamera.awb_mode,
+                                    self.camera.picamera.meter_mode,
+                                    self.camera.picamera.exposure_mode,
+                                    float(self.camera.picamera.analog_gain),
+                                    float(self.camera.picamera.digital_gain))
                 logging.debug(f'captured {img.base_filename}')
                 self.add_to_out_queue(img)
                 # reset consecutive exception counter
