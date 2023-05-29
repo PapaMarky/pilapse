@@ -27,6 +27,7 @@ import time
 from fractions import Fraction
 import datetime
 
+from pause_until import pause_until
 from scheduling import Schedule
 from suntime import Suntime
 
@@ -138,6 +139,9 @@ class NightCam:
         # shutdown at 7 am tomorrow
         quiting_time.replace(hour=7, minute=0, second=0, microsecond=0)
         while self.running:
+            if self.shutdown_event.is_set():
+                self.stop_running()
+                break
             if self.check_for_undercurrent():
                 logging.error('Undercurrent detected. Shutting down')
                 self.stop_running()
@@ -165,7 +169,7 @@ class NightCam:
             if self.running:
                 logging.info(f'Sleeping until {next_frame_time}')
                 # TODO: rewrite "pause" that uses an Event.wait
-                pause.until(next_frame_time)
+                pause_until(next_frame_time, self.shutdown_event)
         self.destroy_camera()
 
     def destroy_camera(self):

@@ -8,10 +8,12 @@ import pause
 
 import threads
 from camera import Camera
+from pause_until import pause_until
 from pilapse import BGR
 from threads import ImageProducer, CameraImage
 from scheduling import Schedule
 from config import Configurable
+from light_meter import LightMeter
 
 from datetime import datetime, timedelta
 import time
@@ -98,6 +100,8 @@ class CameraProducer(ImageProducer):
         if self.config.framerate:
             self.config.framerate_delta = timedelta(seconds=config.framerate)
 
+        self.light_meter = LightMeter()
+
         self.nextframe_time = self.now
         self.schedule = Schedule(self.config)
         pause = 10.0
@@ -175,6 +179,7 @@ class CameraProducer(ImageProducer):
                 return
             try:
                 img = CameraImage(self.camera.capture(), prefix=self.prefix, type='jpg')
+                lux = self.light_meter.lux if self.light_meter.available else None
                 img.set_camera_data(self.camera.picamera.exposure_speed/1000000,
                                     self.camera.picamera.ISO,
                                     self.aperture,
@@ -182,7 +187,8 @@ class CameraProducer(ImageProducer):
                                     self.camera.picamera.meter_mode,
                                     self.camera.picamera.exposure_mode,
                                     float(self.camera.picamera.analog_gain),
-                                    float(self.camera.picamera.digital_gain))
+                                    float(self.camera.picamera.digital_gain),
+                                    lux)
                 logging.debug(f'captured {img.base_filename}')
                 self.add_to_out_queue(img)
                 # reset consecutive exception counter
@@ -213,4 +219,4 @@ class CameraProducer(ImageProducer):
                 logging.debug(f'nextframe_time: {self.nextframe_time}')
                 if self.config.debug:
                     logging.info(f'Pausing until {self.nextframe_time} (framerate:{self.config.framerate})')
-                pause.until(self.nextframe_time)
+                pause_until(self.nextframe_time, self.shutdown_event)

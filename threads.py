@@ -1,6 +1,7 @@
 import argparse
 import shutil
 import subprocess
+import sys
 from copy import copy
 import os
 import queue
@@ -20,7 +21,6 @@ import imutils
 import pilapse
 import pilapse as pl
 
-import time
 
 from config import Configurable
 from system_resources import SystemResources
@@ -48,7 +48,7 @@ class Image():
         self._prefix:str = prefix
         self._type:str = type
         self._timestamp:datetime = timestamp if timestamp is not None else datetime.now()
-        self._suffix = suffix
+        self._suffix:str = suffix
 
     def to_str(self):
         return f'path: {self.filepath}, timefile: {self.timestamp_file} base: {self.base_filename} ' \
@@ -65,7 +65,11 @@ class Image():
 
     @property
     def base_filename(self):
-        return f'{self.timestamp_file}_{self._prefix}'
+        filename = f'{self.timestamp_file}_{self._prefix}'
+        if self._suffix:
+            filename += f'_{self._suffix}'
+
+        return filename
 
     @property
     def filename(self):
@@ -102,10 +106,8 @@ class FileImage(Image):
         # 20230526_144349.20090p2_picam001.png
         if not m:
             raise Exception(f'Bad filename format: {path}')
-        super().__init__(path=path, type=m.group(4) )
+        super().__init__(path=path, type=m.group(4), prefix=m.group(2), suffix=m.group(3))
         self._timestamp = datetime.strptime(m.group(1), self.timestamp_pattern)
-        self._prefix = m.group(2)
-        self._suffix = m.group(3)
         self._image = image
 
     @property
@@ -120,8 +122,8 @@ class FileImage(Image):
         return self._image
 
 class CameraImage(Image):
-    def __init__(self, image, prefix='snap', type='png', timestamp=None):
-        super().__init__(image=image, prefix=prefix, type=type, timestamp=timestamp)
+    def __init__(self, image, prefix='snap', type='png', timestamp=None, suffix=''):
+        super().__init__(image=image, prefix=prefix, suffix=suffix, type=type, timestamp=timestamp)
         self.data = None
 
     @property
@@ -138,7 +140,7 @@ class CameraImage(Image):
         self.data = settings
 
     def set_camera_data(self, shutter_speed, iso, aperture, awb_mode, meter_mode, exposure_mode,
-                        analog_gain, digital_gain):
+                        analog_gain, digital_gain, lux):
         self.data = {
             'shutter-speed': shutter_speed,
             'iso': iso,
@@ -147,7 +149,8 @@ class CameraImage(Image):
             'meter-mode': meter_mode,
             'exposure-mode': exposure_mode,
             'analog-gain': analog_gain,
-            'digital-gain': digital_gain
+            'digital-gain': digital_gain,
+            'lux': lux
         }
 
 class PilapseThread(threading.Thread):
@@ -189,6 +192,7 @@ class PilapseThread(threading.Thread):
         # if any was caught
         if self.excecption:
             raise self.excecption
+
 
 class ImageProducer(PilapseThread, Configurable):
     ARGS_ADDED = False
@@ -530,7 +534,7 @@ class ImageWriter(ImageConsumer):
 
     def consume_image(self, image):
         path = image.filepath
-        logging.info(f'Input image type: {type(image)}  ({self})')
+        logging.debug(f'Input image type: {type(image)}  ({self})')
         if self.config.show_name or self.config.show_camera_settings:
             pilapse.annotate_frame(image.image,
                                    image.timestamp_human,
@@ -540,12 +544,16 @@ class ImageWriter(ImageConsumer):
             path = os.path.join(self.outdir, image.filename)
             if self.config.show_camera_settings is not None and image.camera_settings is not None:
                 settings = image.camera_settings
+                settings_string = f'shutter speed: {settings["shutter-speed"]:.4f} iso: {settings["iso"]} ' \
+                                  f'digital gain: {settings["digital-gain"]:.4f} ' \
+                                  f'analog gain: {settings["analog-gain"]:.4f}'
+                if settings['lux'] is not None:
+                    settings_string += f' lux: {settings["lux"]:.4f}'
                 pilapse.annotate_frame(image.image,
-                                       f'shutter speed: {settings["shutter-speed"]:.4f} iso: {settings["iso"]} '
-                                       f'digital gain: {settings["digital-gain"]:.4f} analog gain: {settings["analog-gain"]:.4f}',
+                                       settings_string,
                                        self.config,
                                        position='ll', text_size=0.5)
-        logging.info(f'## writing {path}')
+        logging.debug(f'## writing {path}')
         cv2.imwrite(path, image.image)
 
 class ImagePipeline(ImageProducer, ImageConsumer):
@@ -642,9 +650,8 @@ class MotionPipeline(ImagePipeline):
                 path = os.path.join(self.outdir, new_name_motion)
                 path = path.replace('90M', '90MT')
                 logging.debug(f'Writing Test Image: {path}')
-                # TODO: need to pay attention to whether or not the incoming image is from a camera
                 if isinstance(image, CameraImage):
-                    test_image = CameraImage(copy, prefix=self.config.prefix, timestamp=image.timestamp)
+                    test_image = CameraImage(copy, prefix=self.config.prefix, suffix='10MT', timestamp=image.timestamp)
                     test_image.copy_camera_settings(image.camera_settings)
                 else:
                     test_image = FileImage(path, image=copy)
@@ -660,7 +667,12 @@ class MotionPipeline(ImagePipeline):
                         copy = self.previous_image.image.copy()
 
                         path = os.path.join(self.outdir, self.previous_image_name)
-                        self.add_to_out_queue(FileImage(path, image=copy))
+                        if isinstance(image, CameraImage):
+                            image_out = CameraImage(copy, prefix=self.config.prefix, suffix='70p', timestamp=image.timestamp)
+                            image_out.copy_camera_settings(image.camera_settings)
+                        else:
+                            image_out = FileImage(path, image=copy)
+                        self.add_to_out_queue(image_out)
                     self.motion_end = datetime.now() + self.motion_wait
                 elif self.motion_end is not None:
                         if datetime.now() <= self.motion_end:
@@ -668,8 +680,13 @@ class MotionPipeline(ImagePipeline):
 
                             copy = self.current_image.image.copy()
 
-                            path = os.path.join(self.outdir, new_name_motion.replace('90M', '90m'))
-                            self.add_to_out_queue(FileImage(path, image=copy))
+                            path = os.path.join(self.outdir, new_name_motion.replace('80M', '90m'))
+                            if isinstance(image, CameraImage):
+                                image_out = CameraImage(copy, prefix=self.config.prefix, suffix='90m', timestamp=image.timestamp)
+                                image_out.copy_camera_settings(image.camera_settings)
+                            else:
+                                image_out = FileImage(path, image=copy)
+                            self.add_to_out_queue(image_out)
                         else:
                             self.motion_end = None
 
@@ -678,8 +695,13 @@ class MotionPipeline(ImagePipeline):
                     self.keepers += 1
                     path = os.path.join(self.outdir, new_name)
                     logging.debug(f'Writing Motion frame: {path}')
-                    self.add_to_out_queue(FileImage(path, image=img_out))
-                    # cv2.imwrite(path, img_out)
+                    if isinstance(image, CameraImage):
+                        image_out = CameraImage(img_out, prefix=self.config.prefix, suffix='80M', timestamp=image.timestamp)
+                        image_out.copy_camera_settings(image.camera_settings)
+                    else:
+                        image_out = FileImage(path, image=img_out)
+                    self.add_to_out_queue(image_out)
+
                 elif self.config.all_frames:
                     path = os.path.join(self.outdir, new_name)
                     logging.debug(f'Writing all frames: {path}')
