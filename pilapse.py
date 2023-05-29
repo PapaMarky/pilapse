@@ -236,11 +236,14 @@ def annotate_frame(image, annotation, config, position='ul', text_size:float = 1
         x = text_height
         y = 2 * text_height
 
+        scale = text_height / text_size[1]
+        color = config.label_rgb if config.label_rgb is not None else ORANGE
+
         logging.info(f'pos: {position}, str: "{annotation}"')
         if position[1] in 'lL':
             x = text_height
         elif position[1] in 'rR':
-            x = image_w - (text_height + text_size[0])
+            x = image_w - ((text_height + text_size[0]) * scale)
 
         if position[0] in 'uUtT':
             y = 2 * text_height
@@ -248,8 +251,6 @@ def annotate_frame(image, annotation, config, position='ul', text_size:float = 1
             y = image_h - 2 * text_height
 
         origin = (int(x), int(y))
-        scale = text_height / text_size[1]
-        color = config.label_rgb if config.label_rgb is not None else ORANGE
         # first write with greater thickness to create constrasting outline
         cv2.putText(image, annotation, origin, font, scale, WHITE, thickness=thickness + 2)
         cv2.putText(image, annotation, origin, font, scale, color, thickness=thickness)

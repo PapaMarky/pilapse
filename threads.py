@@ -531,6 +531,11 @@ class ImageWriter(ImageConsumer):
     def consume_image(self, image):
         path = image.filepath
         logging.info(f'Input image type: {type(image)}  ({self})')
+        if self.config.show_name or self.config.show_camera_settings:
+            pilapse.annotate_frame(image.image,
+                                   image.timestamp_human,
+                                   self.config,
+                                   position='ul')
         if isinstance(image, CameraImage):
             path = os.path.join(self.outdir, image.filename)
             if self.config.show_camera_settings is not None and image.camera_settings is not None:
@@ -611,8 +616,6 @@ class MotionPipeline(ImagePipeline):
         fname_base = self.current_image.base_filename
         new_name = f'{fname_base}_90.{self.current_image.type}' if self.config.save_diffs else f'{fname_base}.{self.current_image.type}'
         new_name_motion = f'{fname_base}_90M.{self.current_image.type}'
-        ats = self.now.strftime('%Y/%m/%d %H:%M:%S')
-        annotatation = f'{ats}' if self.config.show_name else None
 
         if self.current_image is not None and self.previous_image is None:
             # There are some config items that need to be adjusted once we know the height and width of the images.
@@ -636,7 +639,6 @@ class MotionPipeline(ImagePipeline):
                 cv2.line(copy, (self.config.right, 0), (self.config.right, h), ORANGE)
                 cv2.rectangle(copy, (100, 100), (100 + self.config.mindiff, 100 + self.config.mindiff), WHITE)
 
-                pl.annotate_frame(copy, annotatation, self.config)
                 path = os.path.join(self.outdir, new_name_motion)
                 path = path.replace('90M', '90MT')
                 logging.debug(f'Writing Test Image: {path}')
@@ -656,7 +658,6 @@ class MotionPipeline(ImagePipeline):
                     if self.motion_end is None:
                         logging.debug(f'New motion detected, saving previous frame for context')
                         copy = self.previous_image.image.copy()
-                        pl.annotate_frame(copy, annotatation, self.config)
 
                         path = os.path.join(self.outdir, self.previous_image_name)
                         self.add_to_out_queue(FileImage(path, image=copy))
@@ -666,7 +667,6 @@ class MotionPipeline(ImagePipeline):
                             logging.debug(f'No new motion detected but still waiting. end time: {self.motion_end}')
 
                             copy = self.current_image.image.copy()
-                            pl.annotate_frame(copy, annotatation, self.config)
 
                             path = os.path.join(self.outdir, new_name_motion.replace('90M', '90m'))
                             self.add_to_out_queue(FileImage(path, image=copy))
@@ -676,7 +676,6 @@ class MotionPipeline(ImagePipeline):
                 if img_out is not None:
                     logging.debug(f'{new_name}')
                     self.keepers += 1
-                    pl.annotate_frame(img_out, annotatation, self.config)
                     path = os.path.join(self.outdir, new_name)
                     logging.debug(f'Writing Motion frame: {path}')
                     self.add_to_out_queue(FileImage(path, image=img_out))
@@ -684,7 +683,6 @@ class MotionPipeline(ImagePipeline):
                 elif self.config.all_frames:
                     path = os.path.join(self.outdir, new_name)
                     logging.debug(f'Writing all frames: {path}')
-                    pl.annotate_frame(self.current_image.image, annotatation, self.config)
                     self.add_to_out_queue(self.current_image)
                     # cv2.imwrite(path, self.current_image.image)
 
