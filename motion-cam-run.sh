@@ -37,6 +37,11 @@ if [[ ! -z $SHOW_CAMERA_SETTINGS ]]; then
   "
 fi
 
+if [[ ! -z $CAMERA_SETTINGS_LOG ]]; then
+  CMD="$CMD --camera-settings-log $CAMERA_SETTINGS_LOG \
+  "
+fi
+
 if [[ ! -z $METER_MODE ]]; then
   CMD="$CMD --meter-mode $METER_MODE "
 fi

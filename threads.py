@@ -83,6 +83,10 @@ class Image():
         return self._timestamp.strftime('%Y/%m/%d %H:%M:%S')
 
     @property
+    def timestamp_long(self):
+        return self._timestamp.strftime('%Y/%m/%d %H:%M:%S.%f')
+
+    @property
     def image(self):
         return self._image
 
@@ -174,6 +178,7 @@ class PilapseThread(threading.Thread):
     def do_work(self):
         logging.warning(f'PilapseThread: do_work for {self.name}')
         pass
+
     def run(self):
         try:
             self.do_work()
@@ -507,8 +512,7 @@ class ImageWriter(ImageConsumer):
                             help='Prefix frame filenames with this string')
         group.add_argument('--show-camera-settings', action='store_true',
                            help='If the image is a CameraImage and the image has camera settings, '
-                                'annotate the image with those settings'
-                           )
+                                'annotate the image with those settings')
 
     def __init__(self, shutdown_event:threading.Event, config:argparse.Namespace, **kwargs):
         super(ImageWriter, self).__init__('ImageWriter', shutdown_event, config, **kwargs)

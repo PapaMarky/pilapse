@@ -58,6 +58,9 @@ class CameraProducer(ImageProducer):
         camera.add_argument('--label-rgb', type=str,
                            help='Set the color of the timestamp on each frame. '
                                 'FORMAT: comma separated integers between 0 and 255, no spaces EX: "R,G,B" ')
+        camera.add_argument('--camera-settings-log', default=None,
+                           help='Create a log of each camera image written and the'
+                                ' camera settings at the specified path.')
 
         CameraProducer.ARGS_ADDED = True
         # CameraProducer owns a Schedule instance
@@ -115,6 +118,11 @@ class CameraProducer(ImageProducer):
         # out of control forever.
         self.capture_exception_count = 0
         self.capture_exception_count_total = 0
+
+        if self.config.camera_settings_log is not None:
+            if '%' in self.config.camera_settings_log:
+                self.config.camera_settings_log = datetime.strftime(datetime.now(), self.config.camera_settings_log)
+            logging.info(f'Logging camera settings to "{self.config.camera_settings_log}"')
 
     def get_camera_model(self):
         return self.camera.model
@@ -189,6 +197,17 @@ class CameraProducer(ImageProducer):
                                     float(self.camera.picamera.analog_gain),
                                     float(self.camera.picamera.digital_gain),
                                     lux)
+                if self.config.camera_settings_log is not None:
+                    with open(self.config.camera_settings_log, 'a') as logfile:
+                        settings = img.camera_settings
+                        logline = f'{img.timestamp_long},{settings["shutter-speed"]},{settings["iso"]},' \
+                                  f'{settings["aperture"]},{settings["awb-mode"]},{settings["meter-mode"]},' \
+                                  f'{settings["exposure-mode"]},{settings["analog-gain"]},{settings["digital-gain"]},' \
+                                  f'{settings["lux"]}\n'
+                        logfile.write(logline)
+                        logfile.flush()
+                        logging.info(f'SETTINGS: {logline}')
+
                 logging.debug(f'captured {img.base_filename}')
                 self.add_to_out_queue(img)
                 # reset consecutive exception counter
