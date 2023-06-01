@@ -14,7 +14,8 @@ class Camera():
                  aspect_ratio='4:3',
                  exposure_mode='auto',
                  awb_mode='auto',
-                 meter_mode='average'):
+                 meter_mode='average',
+                 iso=0):
         self._model = None
         self._sensor_mode = None
         self._use_video_port = True
@@ -37,6 +38,7 @@ class Camera():
         self.camera.exposure_mode = exposure_mode
         self.camera.awb_mode = awb_mode
         self.camera.meter_mode = meter_mode
+        self.camera.iso = iso
 
         try:
             self.camera.led = False

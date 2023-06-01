@@ -43,6 +43,10 @@ if [[ ! -z $CAMERA_SETTINGS_LOG ]]; then
   "
 fi
 
+if [[ ! -z $ISO ]]; then
+  CMD="$CMD --iso $ISO \
+  "
+fi
 
 echo "CMD: $CMD"
 

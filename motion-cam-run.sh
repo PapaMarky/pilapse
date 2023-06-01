@@ -50,6 +50,11 @@ if [[ ! -z $EXPOSURE_MODE ]]; then
   CMD="$CMD --exposure-mode $EXPOSURE_MODE "
 fi
 
+if [[ ! -z $ISO ]]; then
+  CMD="$CMD --iso $ISO \
+  "
+fi
+
 if [[ ! -z LABEL_RGB ]]; then
   CMD="$CMD --label-rgb $LABEL_RGB"
 fi

@@ -53,6 +53,10 @@ class CameraProducer(ImageProducer):
         camera.add_argument('--meter-mode', type=str, default='average',
                             help='See '
                                  'https://picamera.readthedocs.io/en/release-1.13/api_camera.html#picamera.PiCamera.meter_mode')
+        camera.add_argument('--iso', type=int, default=0,
+                            help='Set the ISO of the camera to a fixed value. The actual value used when iso is '
+                                 'explicitly set will be one of the following values (whichever is closest): '
+                                 '100, 200, 320, 400, 500, 640, 800.')
         camera.add_argument('--show-name', action='store_true',
                            help='Write a timestamp on each frame')
         camera.add_argument('--label-rgb', type=str,
@@ -99,7 +103,8 @@ class CameraProducer(ImageProducer):
                                     zoom=config.zoom,
                                     exposure_mode=config.exposure_mode,
                                     meter_mode=config.meter_mode,
-                                    aspect_ratio=ar)
+                                    aspect_ratio=ar,
+                                    iso=config.iso)
         if self.config.framerate:
             self.config.framerate_delta = timedelta(seconds=config.framerate)
 
@@ -227,7 +232,8 @@ class CameraProducer(ImageProducer):
                     logging.error(f'Too many total exceptions during image capture')
                     raise e
 
-                logging.exception(f'Exception capturing image: {e}')
+                logging.error(f'Exception capturing image: {e}')
+                logging.info(f'Trying to recover from camera exception')
                 # give the camera some time (arbitrary) to recover from the error
                 self.shutdown_event.wait(0.1)
                 return
