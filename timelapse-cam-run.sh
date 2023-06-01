@@ -48,6 +48,12 @@ if [[ ! -z $ISO ]]; then
   "
 fi
 
+# location=(37.255329186920946, -121.94417304596949)
+if [[ ! -z $LOCATION ]]; then
+  CMD="$CMD --location $LOCATION \
+  "
+fi
+
 echo "CMD: $CMD"
 
 $CMD

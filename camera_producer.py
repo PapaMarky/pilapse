@@ -1,5 +1,7 @@
 import argparse
+import json
 import logging
+import os
 import re
 import subprocess
 import threading
@@ -14,6 +16,7 @@ from threads import ImageProducer, CameraImage
 from scheduling import Schedule
 from config import Configurable
 from light_meter import LightMeter
+from suntime import Suntime
 
 from datetime import datetime, timedelta
 import time
@@ -65,6 +68,16 @@ class CameraProducer(ImageProducer):
         camera.add_argument('--camera-settings-log', default=None,
                            help='Create a log of each camera image written and the'
                                 ' camera settings at the specified path.')
+        camera.add_argument('--auto-cam', action='store_true',
+                            help='Automatically update the camera shutter speed / iso based on time of day and / or '
+                                 'light meter readings (if available)')
+
+        camera.add_argument('--location', type=str,
+                            help='latitude and longitude to use for getting the sunset/sunrise etc times. Two comma '
+                                 'separated values')
+        parser.add_argument('--suntime-settings', type=str,
+                            help='path to json file with camera settings for each "suntime". '
+                                 'Used as keyframes to calculate current values')
 
         CameraProducer.ARGS_ADDED = True
         # CameraProducer owns a Schedule instance
@@ -89,6 +102,8 @@ class CameraProducer(ImageProducer):
         super(CameraProducer, self).__init__('CameraProducer', shutdown_event, config, **kwargs)
         logging.debug(f'CameraProducer init {self.name}')
         self.process_config(config)
+        self.suntimes = None
+        self.load_suntimes()
 
         self.width:int = config.width
         self.height:int = config.height
@@ -112,11 +127,26 @@ class CameraProducer(ImageProducer):
 
         self.nextframe_time = self.now
         self.schedule = Schedule(self.config)
-        pause = 10.0
-        logging.info(f'Sleeping for {pause} seconds to let the sensor find itself')
-        shutdown_event.wait(pause) # let the camera self calibrate
-        if shutdown_event.is_set():
-            logging.info('shutdown event received while waiting for camera')
+        if config.auto_cam:
+            if self.config.suntime_settings:
+
+            # need to calculate and set initial ISO / shutter speed
+            iso, shutter_speed = self.calulate_camera_settings()
+            logging.info(f'Before setting ISO: analog gain: {self.camera.picamera.analog_gain}, '
+                         f'digital gain: {self.camera.picamera.digital_gain}')
+            self.camera.picamera.iso = iso
+            self.camera.picamera.shutter_speed = shutter_speed
+
+            # After setting iso, we need to wait for the digital / analog gain to settle down before we lock them into
+            # place by setting exposure_mode to "off"
+            pause = 10.0
+            logging.info(f'Sleeping for {pause} seconds to let the sensor find itself')
+            shutdown_event.wait(pause) # let the camera self calibrate
+            if shutdown_event.is_set():
+                logging.info('shutdown event received while waiting for camera')
+            self.camera.exposure_mode = 'off'
+            logging.info(f'After locking gains: analog gain: {self.camera.picamera.analog_gain}, '
+                         f'digital gain: {self.camera.picamera.digital_gain}')
 
         # we ignore exceptions from image capture. Use this value and MAX_CAPTURE_EXCEPTION
         # so that if the camera goes completely bonkers we shutdown cleanly instead of looping
@@ -128,6 +158,51 @@ class CameraProducer(ImageProducer):
             if '%' in self.config.camera_settings_log:
                 self.config.camera_settings_log = datetime.strftime(datetime.now(), self.config.camera_settings_log)
             logging.info(f'Logging camera settings to "{self.config.camera_settings_log}"')
+
+    def calulate_camera_settings(self):
+        # zero means "let the camera decide" for both iso and shutter_speed
+        iso = 0
+        shutter_speed = 0
+        if self.config.auto_cam:
+            return self.calculate_camera_settings_from_time()
+        return iso, shutter_speed
+
+    def calculate_camera_settings_from_time(self):
+        p0, p1, pct = self.suntimes.get_part_of_day_percent()
+        iso0 = self.config.camera_settings[p0]['iso']
+        shutter0 = self.config.camera_settings[p0]['shutter']
+
+        iso1 = self.config.camera_settings[p1]['iso']
+        shutter1 = self.config.camera_settings[p1]['shutter']
+
+        iso = int(iso0) if iso0 == iso1 else int(iso0 + (iso1 - iso0) * pct)
+        shutter = int(shutter0) if shutter0 == shutter1 else int(shutter0 + (shutter1 - shutter0) * pct)
+
+        logging.info(f'      ISO: {iso0} - {iso1} ({pct:.4f}) {iso}')
+        logging.info(f'  SHUTTER: {shutter0} - {shutter1} ({pct:.4f}) {shutter}')
+        return (iso, shutter)
+
+    def calculate_camera_settings_from_lighting(self):
+        if self.light_meter.available:
+            # Build a table of ISO, lux, shutter_speed. For the current ISO and lux, interpolate the current
+            # shutter speed. Or something.
+            pass
+        else:
+            raise Exception('Trying to set camera settings from lighting, but no light meter available')
+
+    def load_suntime_settings(self):
+        self.config.camera_settings = None
+        if self.config.auto_cam:
+            if self.config.suntimes_settings:
+                if not os.path.exists(self.config.suntimes_settings):
+                    logging.info(f'Camera suntimes settings file not found ({self.config.suntimes_settings})')
+
+                with open(self.config.settings) as config_file:
+                    self.config.camera_settings = json.loads(config_file.read())
+
+    def load_suntimes(self):
+        if self.config.location:
+            self.suntimes = Suntime(self.config.location)
 
     def get_camera_model(self):
         return self.camera.model
@@ -182,6 +257,12 @@ class CameraProducer(ImageProducer):
             logging.info(f'Stop At Check Failed. Shutting down')
             self.shutdown_event.set()
             return False
+
+        if self.config.auto_cam:
+            iso, shutter_speed = self.calulate_camera_settings()
+            self.camera.picamera.iso = iso
+            self.camera.picamera.shutter_speed = shutter_speed
+            # do we need to pause?
 
         return True
     def produce_image(self) -> str:
