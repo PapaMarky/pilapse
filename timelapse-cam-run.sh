@@ -43,6 +43,11 @@ if [[ ! -z $CAMERA_SETTINGS_LOG ]]; then
   "
 fi
 
+if [[ ! -z $AUTO_CAM ]]; then
+  CMD="$CMD --auto-cam \
+  "
+fi
+
 if [[ ! -z $ISO ]]; then
   CMD="$CMD --iso $ISO \
   "
@@ -52,6 +57,10 @@ fi
 if [[ ! -z $LOCATION ]]; then
   CMD="$CMD --location $LOCATION \
   "
+fi
+
+if [[ ! -z LABEL_RGB ]]; then
+  CMD="$CMD --label-rgb $LABEL_RGB"
 fi
 
 echo "CMD: $CMD"
@@ -66,4 +75,3 @@ $CMD
 #	--all-frames \
 #	--shrinkto 640 \
 #	--save-config \
-#	--show-name --label-rgb 0,0,0 \

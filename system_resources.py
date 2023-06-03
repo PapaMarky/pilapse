@@ -10,6 +10,7 @@ Monitor system resources for problems
 """
 import logging
 import os.path
+import platform
 import re
 import subprocess
 
@@ -27,6 +28,11 @@ class SystemResources:
             self._model:str = f.read()
             if self._model.endswith('\x00'):
                 self._model = self._model[:-1]
+        self._hostname = platform.node()
+
+    @property
+    def hostname(self):
+        return self._hostname
 
     @property
     def model(self):

@@ -8,6 +8,9 @@ import threading
 
 import pause
 
+from system_resources import SystemResources
+
+import pilapse
 import threads
 from camera import Camera
 from pause_until import pause_until
@@ -35,6 +38,58 @@ class CameraProducer(ImageProducer):
 
     # Shutdown after MAX_CAPTURE_EXCEPTIONS_TOTAL total exceptions
     MAX_CAPTURE_EXCEPTIONS_TOTAL = 100
+
+    # lux, shutterspeed table (iso = 100)
+    LUX_SHUTTER_TABLE_100x = [
+        (0.1152, 10),
+        (0.1728, 5),
+        (1, 1),
+        (5, 0.1),
+        (20, 0.05),
+        (50, 0.0959),
+        (224, 0.033),
+        (400, 0.016),
+        (474, 0.012),
+        (594, 0.0094),
+        (982, 0.005),
+        (1200, 0.004),
+        (1320, 0.0035),
+        (1692, 0.0019),
+        (1983, 0.00127),
+        (2500, 0.00106),
+        (3252, 0.00099)
+    ]
+    LUX_SHUTTER_TABLE_100 = [
+        (0.1152, 10),
+        (0.1728, 5),
+        (1, 1),
+        (10, 0.097),
+        (50, 0.0347),
+        (224, 0.022),
+        (400, 0.016),
+        (474, 0.012),
+        (575, 0.0024),
+        #(982, 0.005),
+        #(1200, 0.003),
+        (1320, 0.002),
+        (1692, 0.0012),
+        (1983, 0.001),
+        (2500, 0.0010),
+        (3252, 0.00099)
+    ]
+
+    @classmethod
+    def shutter_speed_from_lux(cls, lux):
+        for i in range(len(cls.LUX_SHUTTER_TABLE_100)):
+            (l1, s1) = cls.LUX_SHUTTER_TABLE_100[i]
+            if l1 >= lux:
+                if i == 0:
+                    return s1
+                l0, s0 = cls.LUX_SHUTTER_TABLE_100[i-1]
+                p = (lux - l0) / (l1 - l0)
+                return s0 + p * (s1 - s0)
+        return s1
+
     @classmethod
     def add_arguments_to_parser(cls, parser:argparse.ArgumentParser, argument_group_name:str= 'Camera Settings')->argparse.ArgumentParser:
         logging.debug(f'Adding CameraProducer({cls}) args (ADDED: {CameraProducer.ARGS_ADDED})')
@@ -124,14 +179,15 @@ class CameraProducer(ImageProducer):
             self.config.framerate_delta = timedelta(seconds=config.framerate)
 
         self.light_meter = LightMeter()
+        logging.info(f'Light meter available: {self.light_meter.available}')
 
         self.nextframe_time = self.now
         self.schedule = Schedule(self.config)
         if config.auto_cam:
             if self.config.suntime_settings:
-
+                pass
             # need to calculate and set initial ISO / shutter speed
-            iso, shutter_speed = self.calulate_camera_settings()
+            iso, shutter_speed = self.calculate_camera_settings()
             logging.info(f'Before setting ISO: analog gain: {self.camera.picamera.analog_gain}, '
                          f'digital gain: {self.camera.picamera.digital_gain}')
             self.camera.picamera.iso = iso
@@ -139,7 +195,7 @@ class CameraProducer(ImageProducer):
 
             # After setting iso, we need to wait for the digital / analog gain to settle down before we lock them into
             # place by setting exposure_mode to "off"
-            pause = 10.0
+            pause = 30.0
             logging.info(f'Sleeping for {pause} seconds to let the sensor find itself')
             shutdown_event.wait(pause) # let the camera self calibrate
             if shutdown_event.is_set():
@@ -147,7 +203,8 @@ class CameraProducer(ImageProducer):
             self.camera.exposure_mode = 'off'
             logging.info(f'After locking gains: analog gain: {self.camera.picamera.analog_gain}, '
                          f'digital gain: {self.camera.picamera.digital_gain}')
-
+        else:
+            shutdown_event.wait(2)
         # we ignore exceptions from image capture. Use this value and MAX_CAPTURE_EXCEPTION
         # so that if the camera goes completely bonkers we shutdown cleanly instead of looping
         # out of control forever.
@@ -159,11 +216,18 @@ class CameraProducer(ImageProducer):
                 self.config.camera_settings_log = datetime.strftime(datetime.now(), self.config.camera_settings_log)
             logging.info(f'Logging camera settings to "{self.config.camera_settings_log}"')
 
-    def calulate_camera_settings(self):
+        self.system = SystemResources()
+
+    def calculate_camera_settings(self):
         # zero means "let the camera decide" for both iso and shutter_speed
         iso = 0
         shutter_speed = 0
         if self.config.auto_cam:
+            if self.light_meter.available:
+                iso = 100
+                shutter_speed = int(self.shutter_speed_from_lux(self.light_meter.lux) * 1000000)
+                logging.info(f'setting camera from lux: shutter speed: {shutter_speed}')
+                return iso, shutter_speed
             return self.calculate_camera_settings_from_time()
         return iso, shutter_speed
 
@@ -181,14 +245,6 @@ class CameraProducer(ImageProducer):
         logging.info(f'      ISO: {iso0} - {iso1} ({pct:.4f}) {iso}')
         logging.info(f'  SHUTTER: {shutter0} - {shutter1} ({pct:.4f}) {shutter}')
         return (iso, shutter)
-
-    def calculate_camera_settings_from_lighting(self):
-        if self.light_meter.available:
-            # Build a table of ISO, lux, shutter_speed. For the current ISO and lux, interpolate the current
-            # shutter speed. Or something.
-            pass
-        else:
-            raise Exception('Trying to set camera settings from lighting, but no light meter available')
 
     def load_suntime_settings(self):
         self.config.camera_settings = None
@@ -259,7 +315,7 @@ class CameraProducer(ImageProducer):
             return False
 
         if self.config.auto_cam:
-            iso, shutter_speed = self.calulate_camera_settings()
+            iso, shutter_speed = self.calculate_camera_settings()
             self.camera.picamera.iso = iso
             self.camera.picamera.shutter_speed = shutter_speed
             # do we need to pause?
@@ -274,6 +330,8 @@ class CameraProducer(ImageProducer):
             try:
                 img = CameraImage(self.camera.capture(), prefix=self.prefix, type='jpg')
                 lux = self.light_meter.lux if self.light_meter.available else None
+                awb_gains = self.camera.picamera.awb_gains
+                awb_gains = (float(awb_gains[0]), float(awb_gains[1]))
                 img.set_camera_data(self.camera.picamera.exposure_speed/1000000,
                                     self.camera.picamera.ISO,
                                     self.aperture,
@@ -282,6 +340,7 @@ class CameraProducer(ImageProducer):
                                     self.camera.picamera.exposure_mode,
                                     float(self.camera.picamera.analog_gain),
                                     float(self.camera.picamera.digital_gain),
+                                    awb_gains,
                                     lux)
                 if self.config.camera_settings_log is not None:
                     with open(self.config.camera_settings_log, 'a') as logfile:
@@ -289,10 +348,11 @@ class CameraProducer(ImageProducer):
                         logline = f'{img.timestamp_long},{settings["shutter-speed"]},{settings["iso"]},' \
                                   f'{settings["aperture"]},{settings["awb-mode"]},{settings["meter-mode"]},' \
                                   f'{settings["exposure-mode"]},{settings["analog-gain"]},{settings["digital-gain"]},' \
-                                  f'{settings["lux"]}\n'
+                                  f'{settings["lux"]},{self.camera.model},{pilapse.get_program_name()},' \
+                                  f'{self.system.model},{self.system.hostname}\n'
                         logfile.write(logline)
                         logfile.flush()
-                        logging.info(f'SETTINGS: {logline}')
+                        logging.debug(f'SETTINGS: {logline}')
 
                 logging.debug(f'captured {img.base_filename}')
                 self.add_to_out_queue(img)

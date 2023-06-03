@@ -225,6 +225,7 @@ class PilapseConfig(Config):
 def annotate_frame(image, annotation, config, position='ul', text_size:float = 1.0):
     if annotation:
         text_height = int(config.height / 25 * text_size)
+        space = text_height * 0.5
         thickness = int(config.height * 1/480 * text_size)
         if thickness < 1:
             thickness = 1
@@ -240,6 +241,9 @@ def annotate_frame(image, annotation, config, position='ul', text_size:float = 1
         color = config.label_rgb if config.label_rgb is not None else ORANGE
 
         logging.debug(f'pos: {position}, str: "{annotation}"')
+        lines = annotation.splitlines()
+        nlines = len(lines)
+
         if position[1] in 'lL':
             x = text_height
         elif position[1] in 'rR':
@@ -248,13 +252,15 @@ def annotate_frame(image, annotation, config, position='ul', text_size:float = 1
         if position[0] in 'uUtT':
             y = 2 * text_height
         elif position[0] in 'lLbB':
-            y = image_h - 2 * text_height
+            y = image_h - nlines * (text_height + space) - text_height
 
-        origin = (int(x), int(y))
-        logging.debug(f'annotation origin for {position}: {origin}')
-        # first write with greater thickness to create constrasting outline
-        cv2.putText(image, annotation, origin, font, scale, WHITE, thickness=thickness + 2)
-        cv2.putText(image, annotation, origin, font, scale, color, thickness=thickness)
+        logging.debug(f'annotation origin for {position}')
+        for line in lines:
+            origin = (int(x), int(y))
+            # first write with greater thickness to create constrasting outline
+            cv2.putText(image, line, origin, font, scale, WHITE, thickness=thickness + 2)
+            cv2.putText(image, line, origin, font, scale, color, thickness=thickness)
+            y += text_height + space
         return text_height
 
 def setup_camera(camera, config):

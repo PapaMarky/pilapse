@@ -144,7 +144,7 @@ class CameraImage(Image):
         self.data = settings
 
     def set_camera_data(self, shutter_speed, iso, aperture, awb_mode, meter_mode, exposure_mode,
-                        analog_gain, digital_gain, lux):
+                        analog_gain, digital_gain, awb_gains, lux):
         self.data = {
             'shutter-speed': shutter_speed,
             'iso': iso,
@@ -154,6 +154,7 @@ class CameraImage(Image):
             'exposure-mode': exposure_mode,
             'analog-gain': analog_gain,
             'digital-gain': digital_gain,
+            'awb-gains': awb_gains,
             'lux': lux
         }
 
@@ -548,11 +549,16 @@ class ImageWriter(ImageConsumer):
             path = os.path.join(self.outdir, image.filename)
             if self.config.show_camera_settings is not None and image.camera_settings is not None:
                 settings = image.camera_settings
-                settings_string = f'shutter speed: {settings["shutter-speed"]:.4f} iso: {settings["iso"]} ' \
-                                  f'digital gain: {settings["digital-gain"]:.4f} ' \
-                                  f'analog gain: {settings["analog-gain"]:.4f}'
+                settings_string = f'shutter speed: {settings["shutter-speed"]:.4f} '
                 if settings['lux'] is not None:
-                    settings_string += f' lux: {settings["lux"]:.4f}'
+                    settings_string += f' lux: {settings["lux"]:.4f} '
+                settings_string += f'iso: {settings["iso"]}\n'
+                settings_string += \
+                    f'exp mode: {settings["exposure-mode"]} met mode: {settings["meter-mode"]} ' \
+                    f'awb mode: {settings["awb-mode"]}\n'
+                settings_string += \
+                    f'gains: digital: {settings["digital-gain"]:.4f} analog: {settings["analog-gain"]:.4f} ' \
+                    f'awb: ({settings["awb-gains"][0]:.4f},{settings["awb-gains"][1]:.4f})'
                 pilapse.annotate_frame(image.image,
                                        settings_string,
                                        self.config,
