@@ -30,6 +30,20 @@ class Camera():
         self.camera = PiCamera(sensor_mode=self._sensor_mode,
                                framerate_range=(1/10, 40),
                                resolution=(width,height))
+
+        modes = []
+        for m in PiCamera.EXPOSURE_MODES:
+            modes.append(m)
+        logging.info(f'exposure modes: {modes}')
+        modes = []
+        for m in PiCamera.AWB_MODES:
+            modes.append(m)
+        logging.info(f'awb modes: {modes}')
+        modes = []
+        for m in PiCamera.METER_MODES:
+            modes.append(m)
+        logging.info(f'meter modes: {modes}')
+
         s = 1.0 / zoom
         p0 = 0.5 - s/2
         p1 = 0.5 + s/2

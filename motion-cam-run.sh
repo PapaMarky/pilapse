@@ -10,6 +10,10 @@ if [[ ! -z $TESTFRAME ]]; then
   "
 fi
 
+if [[ ! -z $TESTFRAME_NOGRID ]]; then
+  CMD="$CMD --testframe-nogrid "
+fi
+
 if [[ ! -z $NFRAMES ]]; then
   CMD="$CMD --nframes $NFRAMES "
 fi
@@ -48,6 +52,10 @@ fi
 
 if [[ ! -z $EXPOSURE_MODE ]]; then
   CMD="$CMD --exposure-mode $EXPOSURE_MODE "
+fi
+
+if [[ ! -z $AWB_MODE ]]; then
+  CMD="$CMD --awb-mode $AWB_MODE "
 fi
 
 if [[ ! -z $ISO ]]; then

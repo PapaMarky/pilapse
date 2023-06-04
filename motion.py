@@ -60,6 +60,8 @@ class MotionDetectionApp(Configurable):
                                help='Highlight motion in output images.')
         motion.add_argument('--testframe', action='store_true',
                                help='Write a test frame with layout information.')
+        motion.add_argument('--testframe-nogrid', action='store_true',
+                            help='Write a test frame without layout information.')
 
         motion.add_argument('--all-frames', action='store_true',
                            help='Save all images even when no motion is detected')

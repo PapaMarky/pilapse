@@ -256,18 +256,19 @@ class ImageProducer(PilapseThread, Configurable):
             self.signal_shutdown()
             return False
 
-        if self.config.nframes is not None and self.nframes_count >= self.config.nframes:
-            logging.info(f'nframes ({self.nframes_count}) from config ({self.config.nframes}) exceeded. Stopping.')
-            self.shutdown_event.set()
-            return False
-
         return True
 
     def add_to_out_queue(self, image):
+        if self.config.nframes is not None and self.nframes_count >= self.config.nframes:
+            return
         if image is not None:
             self.nframes_count += 1
             logging.debug(f'ADDING IMAGE {self.nframes_count} TO QUEUE')
             self.out_queue.put(image)
+            if self.config.nframes is not None and self.nframes_count >= self.config.nframes:
+                logging.info(f'nframes ({self.nframes_count}) from config ({self.config.nframes}) exceeded. Stopping.')
+                self.shutdown_event.set()
+
 
     def do_work(self) -> None:
         self.start_work()
@@ -547,7 +548,9 @@ class ImageWriter(ImageConsumer):
                                    position='ul')
         if isinstance(image, CameraImage):
             path = os.path.join(self.outdir, image.filename)
-            if self.config.show_camera_settings is not None and image.camera_settings is not None:
+            if self.config.show_camera_settings and (image.camera_settings is not None):
+                logging.info(f'Annotate settings: show: {self.config.show_camera_settings}, '
+                             f'settings: {image.camera_settings is not None}')
                 settings = image.camera_settings
                 settings_string = f'shutter speed: {settings["shutter-speed"]:.4f} '
                 if settings['lux'] is not None:
@@ -641,32 +644,44 @@ class MotionPipeline(ImagePipeline):
             h, w, _ = self.current_image.image.shape
             logging.debug(f'Image Size: ({w} x {h})')
             self.adjust_config(w, h)
-            if self.config.testframe:
-                copy = self.current_image.image.copy()
-                logging.debug(f'drawing lines: top: {self.config.top}, bottom: {self.config.bottom}')
-                for n in range(0, 10):
-                    y = int(h * n / 10)
-                    x = int(w * n / 10)
-                    color = RED if y < self.config.top or y > self.config.bottom else GREEN
-                    cv2.line(copy, (0, y), (w, y), color)
-                    color = RED if x < self.config.left else GREEN
-                    cv2.line(copy, (x, 0), (x, h), color)
-                cv2.line(copy, (0, self.config.top), (w, self.config.top), ORANGE)
-                cv2.line(copy, (0, self.config.bottom), (w, self.config.bottom), ORANGE)
-                cv2.line(copy, (self.config.left, 0), (self.config.left, h), ORANGE)
-                cv2.line(copy, (self.config.right, 0), (self.config.right, h), ORANGE)
-                cv2.rectangle(copy, (100, 100), (100 + self.config.mindiff, 100 + self.config.mindiff), WHITE)
+            if self.config.testframe or self.config.testframe_nogrid:
+                if self.config.testframe_nogrid:
+                    copy = self.current_image.image.copy()
+                    path = os.path.join(self.outdir, new_name_motion)
+                    path = path.replace('90M', '09mt')
+                    logging.info(f'Writing Test Image: {path}')
+                    if isinstance(image, CameraImage):
+                        test_image = CameraImage(copy, prefix=self.config.prefix, suffix='09mt', timestamp=image.timestamp)
+                        test_image.copy_camera_settings(image.camera_settings)
+                    else:
+                        test_image = FileImage(path, image=copy)
+                    self.add_to_out_queue(test_image)
+                if self.config.testframe:
+                    copy = self.current_image.image.copy()
+                    logging.debug(f'drawing lines: top: {self.config.top}, bottom: {self.config.bottom}')
+                    for n in range(0, 10):
+                        y = int(h * n / 10)
+                        x = int(w * n / 10)
+                        color = RED if y < self.config.top or y > self.config.bottom else GREEN
+                        cv2.line(copy, (0, y), (w, y), color)
+                        color = RED if x < self.config.left else GREEN
+                        cv2.line(copy, (x, 0), (x, h), color)
+                    cv2.line(copy, (0, self.config.top), (w, self.config.top), ORANGE)
+                    cv2.line(copy, (0, self.config.bottom), (w, self.config.bottom), ORANGE)
+                    cv2.line(copy, (self.config.left, 0), (self.config.left, h), ORANGE)
+                    cv2.line(copy, (self.config.right, 0), (self.config.right, h), ORANGE)
+                    cv2.rectangle(copy, (100, 100), (100 + self.config.mindiff, 100 + self.config.mindiff), WHITE)
 
-                path = os.path.join(self.outdir, new_name_motion)
-                path = path.replace('90M', '90MT')
-                logging.debug(f'Writing Test Image: {path}')
-                if isinstance(image, CameraImage):
-                    test_image = CameraImage(copy, prefix=self.config.prefix, suffix='10MT', timestamp=image.timestamp)
-                    test_image.copy_camera_settings(image.camera_settings)
-                else:
-                    test_image = FileImage(path, image=copy)
-                self.add_to_out_queue(test_image)
-                # cv2.imwrite(path, copy)
+                    path = os.path.join(self.outdir, new_name_motion)
+                    path = path.replace('90M', '10MT')
+                    logging.info(f'Writing Test Image: {path}')
+                    if isinstance(image, CameraImage):
+                        test_image = CameraImage(copy, prefix=self.config.prefix, suffix='10MT', timestamp=image.timestamp)
+                        test_image.copy_camera_settings(image.camera_settings)
+                    else:
+                        test_image = FileImage(path, image=copy)
+                    self.add_to_out_queue(test_image)
+
         elif self.previous_image is not None and self.current_image is not None:
                 img_out, motion_detected = self.compare_images()
                 if motion_detected:

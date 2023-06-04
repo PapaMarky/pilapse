@@ -111,6 +111,7 @@ class CameraProducer(ImageProducer):
         camera.add_argument('--meter-mode', type=str, default='average',
                             help='See '
                                  'https://picamera.readthedocs.io/en/release-1.13/api_camera.html#picamera.PiCamera.meter_mode')
+        camera.add_argument('--awb-mode', type=str, default='auto', help='Set awb_mode on the camera')
         camera.add_argument('--iso', type=int, default=0,
                             help='Set the ISO of the camera to a fixed value. The actual value used when iso is '
                                  'explicitly set will be one of the following values (whichever is closest): '
@@ -173,6 +174,7 @@ class CameraProducer(ImageProducer):
                                     zoom=config.zoom,
                                     exposure_mode=config.exposure_mode,
                                     meter_mode=config.meter_mode,
+                                    awb_mode=config.awb_mode,
                                     aspect_ratio=ar,
                                     iso=config.iso)
         if self.config.framerate:
