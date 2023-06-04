@@ -6,8 +6,6 @@ import re
 import subprocess
 import threading
 
-import pause
-
 from system_resources import SystemResources
 
 import pilapse
@@ -17,12 +15,10 @@ from pause_until import pause_until
 from pilapse import BGR
 from threads import ImageProducer, CameraImage
 from scheduling import Schedule
-from config import Configurable
 from light_meter import LightMeter
 from suntime import Suntime
 
 from datetime import datetime, timedelta
-import time
 
 
 class CameraProducer(ImageProducer):
@@ -190,7 +186,7 @@ class CameraProducer(ImageProducer):
                 pass
             # need to calculate and set initial ISO / shutter speed
             iso, shutter_speed = self.calculate_camera_settings()
-            logging.info(f'Before setting ISO: analog gain: {self.camera.picamera.analog_gain}, '
+            logging.info(f'Before setting ISO to {iso}: analog gain: {self.camera.picamera.analog_gain}, '
                          f'digital gain: {self.camera.picamera.digital_gain}')
             self.camera.picamera.iso = iso
             self.camera.picamera.shutter_speed = shutter_speed
@@ -206,6 +202,7 @@ class CameraProducer(ImageProducer):
             logging.info(f'After locking gains: analog gain: {self.camera.picamera.analog_gain}, '
                          f'digital gain: {self.camera.picamera.digital_gain}')
         else:
+            self.camera.picamera.iso = config.iso
             shutdown_event.wait(2)
         # we ignore exceptions from image capture. Use this value and MAX_CAPTURE_EXCEPTION
         # so that if the camera goes completely bonkers we shutdown cleanly instead of looping
@@ -231,6 +228,8 @@ class CameraProducer(ImageProducer):
                 logging.info(f'setting camera from lux: shutter speed: {shutter_speed}')
                 return iso, shutter_speed
             return self.calculate_camera_settings_from_time()
+        else:
+            iso = self.config.iso
         return iso, shutter_speed
 
     def calculate_camera_settings_from_time(self):

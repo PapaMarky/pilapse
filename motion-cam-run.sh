@@ -63,8 +63,12 @@ if [[ ! -z $ISO ]]; then
   "
 fi
 
-if [[ ! -z LABEL_RGB ]]; then
+if [[ ! -z $LABEL_RGB ]]; then
   CMD="$CMD --label-rgb $LABEL_RGB"
+fi
+
+if [[ ! -z $LOGLEVEL ]]; then
+  CMD="$CMD --loglevel $LOGLEVEL "
 fi
 
 echo "CMD: $CMD"
