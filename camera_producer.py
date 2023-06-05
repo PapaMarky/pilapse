@@ -87,7 +87,9 @@ class CameraProducer(ImageProducer):
         return s1
 
     @classmethod
-    def add_arguments_to_parser(cls, parser:argparse.ArgumentParser, argument_group_name:str= 'Camera Settings')->argparse.ArgumentParser:
+    def add_arguments_to_parser(cls,
+                                parser:argparse.ArgumentParser,
+                                argument_group_name:str= 'Camera Settings')->argparse.ArgumentParser:
         logging.debug(f'Adding CameraProducer({cls}) args (ADDED: {CameraProducer.ARGS_ADDED})')
         if CameraProducer.ARGS_ADDED:
             return parser
