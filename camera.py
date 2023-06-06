@@ -66,7 +66,7 @@ class Camera():
         logging.info(f' -         zoom: {zoom}')
         logging.info(f' -     rotation: {rotation}')
         logging.info(f'setup_camera completed: Camera Resolution: {self.camera.MAX_RESOLUTION}')
-        logging.info(f' Model: {self.model()}, Zoom: {self.zoom_str()}')
+        logging.info(f' Model: {self.model}, Zoom: {self.zoom_str()}')
 
     @property
     def picamera(self):

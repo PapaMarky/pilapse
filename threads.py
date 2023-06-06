@@ -549,7 +549,7 @@ class ImageWriter(ImageConsumer):
         if isinstance(image, CameraImage):
             path = os.path.join(self.outdir, image.filename)
             if self.config.show_camera_settings and (image.camera_settings is not None):
-                logging.info(f'Annotate settings: show: {self.config.show_camera_settings}, '
+                logging.debug(f'Annotate settings: show: {self.config.show_camera_settings}, '
                              f'settings: {image.camera_settings is not None}')
                 settings = image.camera_settings
                 settings_string = f'shutter speed: {settings["shutter-speed"]:.4f} '

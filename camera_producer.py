@@ -168,13 +168,30 @@ class CameraProducer(ImageProducer):
         d1 = abs(ar-ar_16_9)
         d2 = abs(ar-ar_4_3)
         ar = '4:3' if d1 > d2 else '16:9'
-        self.camera:Camera = Camera(config.width, config.height,
-                                    zoom=config.zoom,
-                                    exposure_mode=config.exposure_mode,
-                                    meter_mode=config.meter_mode,
-                                    awb_mode=config.awb_mode,
-                                    aspect_ratio=ar,
-                                    iso=config.iso)
+        self.ar = ar
+        self.camera:Camera = None
+        self.create_camera()
+        # we ignore exceptions from image capture. Use this value and MAX_CAPTURE_EXCEPTION
+        # so that if the camera goes completely bonkers we shutdown cleanly instead of looping
+        # out of control forever.
+        self.capture_exception_count = 0
+        self.capture_exception_count_total = 0
+
+        if self.config.camera_settings_log is not None:
+            if '%' in self.config.camera_settings_log:
+                self.config.camera_settings_log = datetime.strftime(datetime.now(), self.config.camera_settings_log)
+            logging.info(f'Logging camera settings to "{self.config.camera_settings_log}"')
+
+        self.system = SystemResources()
+
+    def create_camera(self):
+        self.camera:Camera = Camera(self.width, self.height,
+                                    zoom=self.config.zoom,
+                                    exposure_mode=self.config.exposure_mode,
+                                    meter_mode=self.config.meter_mode,
+                                    awb_mode=self.config.awb_mode,
+                                    aspect_ratio=self.ar,
+                                    iso=self.config.iso)
         if self.config.framerate:
             self.config.framerate_delta = timedelta(seconds=config.framerate)
 
@@ -183,7 +200,7 @@ class CameraProducer(ImageProducer):
 
         self.nextframe_time = self.now
         self.schedule = Schedule(self.config)
-        if config.auto_cam:
+        if self.config.auto_cam:
             if self.config.suntime_settings:
                 pass
             # need to calculate and set initial ISO / shutter speed
@@ -197,27 +214,17 @@ class CameraProducer(ImageProducer):
             # place by setting exposure_mode to "off"
             pause = 30.0
             logging.info(f'Sleeping for {pause} seconds to let the sensor find itself')
-            shutdown_event.wait(pause) # let the camera self calibrate
-            if shutdown_event.is_set():
+            self.shutdown_event.wait(pause) # let the camera self calibrate
+            if self.shutdown_event.is_set():
                 logging.info('shutdown event received while waiting for camera')
             self.camera.exposure_mode = 'off'
             logging.info(f'After locking gains: analog gain: {self.camera.picamera.analog_gain}, '
                          f'digital gain: {self.camera.picamera.digital_gain}')
         else:
-            self.camera.picamera.iso = config.iso
-            shutdown_event.wait(2)
-        # we ignore exceptions from image capture. Use this value and MAX_CAPTURE_EXCEPTION
-        # so that if the camera goes completely bonkers we shutdown cleanly instead of looping
-        # out of control forever.
-        self.capture_exception_count = 0
-        self.capture_exception_count_total = 0
+            self.camera.picamera.iso = self.config.iso
+            self.shutdown_event.wait(2)
 
-        if self.config.camera_settings_log is not None:
-            if '%' in self.config.camera_settings_log:
-                self.config.camera_settings_log = datetime.strftime(datetime.now(), self.config.camera_settings_log)
-            logging.info(f'Logging camera settings to "{self.config.camera_settings_log}"')
 
-        self.system = SystemResources()
 
     def calculate_camera_settings(self):
         # zero means "let the camera decide" for both iso and shutter_speed
@@ -362,6 +369,7 @@ class CameraProducer(ImageProducer):
                 # reset consecutive exception counter
                 self.capture_exception_count = 0
             except Exception as e:
+                logging.warning('Exception trying to capture image')
                 # if we get more than MAX_CAPTURE_EXCEPTIONS in a row, assume that something unrecoverable has gone
                 # wrong, and shutdown
                 self.capture_exception_count += 1
@@ -379,7 +387,8 @@ class CameraProducer(ImageProducer):
                 logging.error(f'Exception capturing image: {e}')
                 logging.info(f'Trying to recover from camera exception')
                 # give the camera some time (arbitrary) to recover from the error
-                self.shutdown_event.wait(0.1)
+                self.camera = None
+                self.create_camera()
                 return
 
             if self.config.framerate:
