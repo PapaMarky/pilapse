@@ -2,6 +2,7 @@ import argparse
 import json
 import logging
 import os
+import queue
 import re
 import subprocess
 import threading
@@ -152,6 +153,7 @@ class CameraProducer(ImageProducer):
 
     def __init__(self,
                  shutdown_event:threading.Event, config:argparse.Namespace,
+                 motion_event_queue:queue.Queue=None,
                  **kwargs):
         super(CameraProducer, self).__init__('CameraProducer', shutdown_event, config, **kwargs)
         logging.debug(f'CameraProducer init {self.name}')
@@ -183,6 +185,8 @@ class CameraProducer(ImageProducer):
             logging.info(f'Logging camera settings to "{self.config.camera_settings_log}"')
 
         self.system = SystemResources()
+
+        self.motion_event_queue = motion_event_queue
 
     def create_camera(self):
         self.camera:Camera = Camera(self.width, self.height,
@@ -310,6 +314,15 @@ class CameraProducer(ImageProducer):
         return True
 
     def preproduce(self):
+        # check for motion_commands
+        if self.motion_event_queue is not None:
+            if not self.motion_event_queue.empty():
+                logging.debug(f'motion_commands queue not empty {self}')
+                command = self.motion_event_queue.get()
+                logging.info(f'Motion Command: {command}')
+            else:
+                self.shutdown_event.wait(0.001)
+
         if not super().preproduce():
             return False
 

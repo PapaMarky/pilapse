@@ -596,8 +596,11 @@ class ImagePipeline(ImageProducer, ImageConsumer):
 
 
 class MotionPipeline(ImagePipeline):
-    def __init__(self, shutdown_event:threading.Event, config:argparse.Namespace, **kwargs):
+    def __init__(self, shutdown_event:threading.Event, config:argparse.Namespace,
+                 motion_event_queue:queue.Queue = None,
+                 **kwargs):
         super(MotionPipeline, self).__init__('MotionPipeline', shutdown_event, config, **kwargs)
+        self.motion_event_queue = motion_event_queue
         logging.debug(f'MotionPipeline init {self.name}')
         self.current_image:Image = None
         self.previous_image:Image = None
@@ -699,6 +702,11 @@ class MotionPipeline(ImagePipeline):
                             image_out = FileImage(path, image=copy)
                         self.add_to_out_queue(image_out)
                     self.motion_end = datetime.now() + self.motion_wait
+                    if self.motion_event_queue is not None:
+                        self.motion_event_queue.put({
+                            'event': 'motion-detected',
+                            'timestamp': self.current_image.timestamp
+                        })
                 elif self.motion_end is not None:
                         if datetime.now() <= self.motion_end:
                             logging.debug(f'No new motion detected but still waiting. end time: {self.motion_end}')

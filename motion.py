@@ -90,6 +90,7 @@ class MotionDetectionApp(Configurable):
             self.process_config(self._config)
             self.front_queue = Queue()
             self.back_queue = Queue()
+            self.motion_event_queue = Queue()
             self._shutdown_event = threading.Event()
 
     def load_from_list(self, parser, arglist=None):
@@ -127,9 +128,13 @@ class MotionDetectionApp(Configurable):
             self._directory_producer = producer
         else:
             # create images using camera
-            producer = CameraProducer(self._shutdown_event, self._config, out_queue=self.front_queue)
+            producer = CameraProducer(self._shutdown_event, self._config, out_queue=self.front_queue,
+                                      motion_event_queue=self.motion_event_queue)
             self._camera_producer = producer
-        self._motion_pipeline = MotionPipeline(self._shutdown_event, self._config, in_queue=self.front_queue, out_queue=self.back_queue)
+        self._motion_pipeline = MotionPipeline(self._shutdown_event, self._config,
+                                               in_queue=self.front_queue,
+                                               out_queue=self.back_queue,
+                                               motion_event_queue=self.motion_event_queue)
         self._image_writer = ImageWriter(self._shutdown_event, self._config, in_queue=self.back_queue)
 
         self._image_writer.start()
