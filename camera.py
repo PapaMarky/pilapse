@@ -1,4 +1,5 @@
 import argparse
+import datetime
 import logging
 import threading
 import time
@@ -29,7 +30,7 @@ class Camera():
             raise Exception(f'Aspect Ratio should be 4:3 or 16:9. Got {aspect_ratio}')
 
         self.camera = PiCamera(sensor_mode=self._sensor_mode,
-                               framerate_range=(1/10, 40),
+                               # framerate_range=(1/10, 40),
                                resolution=(width,height))
         modes = []
         for m in PiCamera.EXPOSURE_MODES:
@@ -92,6 +93,20 @@ class Camera():
 
         self._model = rev
         return self._model
+
+    def start_video_capture(self, filename):
+        self.picamera.start_recording(filename, format=None) #'mjpeg')
+        logging.info(f'Started recording video: {filename}')
+
+    def stop_video_capture(self):
+        self.picamera.stop_recording()
+
+    def check_video_capture(self):
+        """
+        Give the video capture a chance to throw exceptions. Returns immediately or raises an exception
+        :return:
+        """
+        self.picamera.wait_recording()
 
     def capture(self) -> PiRGBArray:
         logging.debug('Capturing image')
