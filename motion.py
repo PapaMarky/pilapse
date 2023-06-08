@@ -124,7 +124,7 @@ class MotionDetectionApp(Configurable):
         producer = None
         if self._config.source_dir:
             # load images from directory
-            producer = DirectoryProducer('png', self._shutdown_event, self._config, out_queue=self.front_queue)
+            producer = DirectoryProducer('jpg', self._shutdown_event, self._config, out_queue=self.front_queue)
             self._directory_producer = producer
         else:
             # create images using camera

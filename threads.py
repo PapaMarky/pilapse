@@ -41,7 +41,7 @@ GIG = 1024 * 1024 * 1024
 class Image():
 
     timestamp_pattern:str = '%Y%m%d_%H%M%S.%f'
-    def __init__(self, path:str=None, image=None, type:str='png', prefix:str=f'frame',
+    def __init__(self, path:str=None, image=None, type:str='jpg', prefix:str=f'frame',
                  timestamp:datetime=None, suffix=''):
         self._path:str = path
         self._image:picamera.PiArrayOutput = image
@@ -105,9 +105,9 @@ class FileImage(Image):
         # regex = r'([^_]+?)_([0-9]+?_[0-9]+?\.[0-9]+?)(_.*?)?\.(.+)'
         regex = r'([0-9]+?_[0-9]+?\.[0-9]+?)_([^_]+?)(_.*?)?\.(.+)'
         m = re.match(regex, os.path.basename(filename))
-        # 20230429/picam001_20230429_192140.054980.png
-        # picam002_20230508_053200.835233.png
-        # 20230526_144349.20090p2_picam001.png
+        # 20230429/picam001_20230429_192140.054980.jpg
+        # picam002_20230508_053200.835233.jpg
+        # 20230526_144349.20090p2_picam001.jpg
         if not m:
             raise Exception(f'Bad filename format: {path}')
         super().__init__(path=path, type=m.group(4), prefix=m.group(2), suffix=m.group(3))
@@ -126,7 +126,7 @@ class FileImage(Image):
         return self._image
 
 class CameraImage(Image):
-    def __init__(self, image, prefix='snap', type='png', timestamp=None, suffix=''):
+    def __init__(self, image, prefix='snap', type='jpg', timestamp=None, suffix=''):
         super().__init__(image=image, prefix=prefix, suffix=suffix, type=type, timestamp=timestamp)
         self.data = None
 
@@ -760,7 +760,7 @@ class MotionPipeline(ImagePipeline):
             original = cv2.blur(original, (10, 10))
             new = cv2.blur(new, (10, 10))
             if config.save_diffs:
-                blur_name = f'{fname_base}_00B.png'
+                blur_name = f'{fname_base}_00B.jpg'
                 path = os.path.join(self.outdir, blur_name)
                 logging.info(f'Saving {path}')
                 self.add_to_out_queue(FileImage(path, image=new))
@@ -794,7 +794,7 @@ class MotionPipeline(ImagePipeline):
         if config.save_diffs:
             diff2 = diff.copy()
             diff2 = imutils.resize(diff2, config.height)
-            diff_name = f'{fname_base}_01D.png'
+            diff_name = f'{fname_base}_01D.jpg'
             path = os.path.join(self.outdir, diff_name)
             logging.debug(f'Saving: {path}')
             self.add_to_out_queue(FileImage(path, image=diff2))
@@ -806,7 +806,7 @@ class MotionPipeline(ImagePipeline):
         if config.save_diffs:
             gray2 = gray.copy()
             gray2 = imutils.resize(gray2, config.height)
-            gray_name = f'{fname_base}_02G.png'
+            gray_name = f'{fname_base}_02G.jpg'
             path = os.path.join(self.outdir, gray_name)
             logging.debug(f'Saving: {path}')
             self.add_to_out_queue(FileImage(path, image=gray2))
@@ -823,7 +823,7 @@ class MotionPipeline(ImagePipeline):
         if config.save_diffs:
             dilated2 = dilated.copy()
             dilated2 = imutils.resize(dilated2, config.height)
-            dilated_name = f'{fname_base}_03D.png'
+            dilated_name = f'{fname_base}_03D.jpg'
             path = os.path.join(self.outdir, dilated_name)
             logging.debug(f'Saving: {path}')
             self.add_to_out_queue(FileImage(path, image=dilated2))
@@ -841,7 +841,7 @@ class MotionPipeline(ImagePipeline):
         if config.save_diffs:
             thresh2 = thresh.copy()
             thresh2 = imutils.resize(thresh2, config.height)
-            thresh_name = f'{fname_base}_04T.png'
+            thresh_name = f'{fname_base}_04T.jpg'
             path = os.path.join(self.outdir, thresh_name)
             logging.debug(f'Saving: {path}')
             self.add_to_out_queue(FileImage(path, image=thresh2))
