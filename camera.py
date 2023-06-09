@@ -17,7 +17,8 @@ class Camera():
                  exposure_mode='auto',
                  awb_mode='auto',
                  meter_mode='average',
-                 iso=0):
+                 iso=0,
+                 video=False):
         self._model = None
         self._sensor_mode = None
         self._use_video_port = True
@@ -29,8 +30,13 @@ class Camera():
         else:
             raise Exception(f'Aspect Ratio should be 4:3 or 16:9. Got {aspect_ratio}')
 
+        # setting framerate_range throws an exception when start_recording is called:
+        # picamera.exc.PiCameraValueError: framerate_delta cannot be used with framerate_range
+        framerate_range = None if video else (1/10, 40)
+        logging.info(f'Video mode: {video}')
+        logging.info(f'framerate_range: {framerate_range}')
         self.camera = PiCamera(sensor_mode=self._sensor_mode,
-                               # framerate_range=(1/10, 40),
+                               framerate_range=framerate_range,
                                resolution=(width,height))
         modes = []
         for m in PiCamera.EXPOSURE_MODES:

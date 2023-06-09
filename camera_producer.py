@@ -188,28 +188,30 @@ class CameraProducer(ImageProducer):
 
         self.motion_event_queue = motion_event_queue
         self.current_video_clip = None
-        self.video_outdir:str = self.config.outdir
-        if '%' in self.video_outdir:
-            self.video_outdir = datetime.strftime(datetime.now(), self.config.outdir)
-        os.makedirs(self.video_outdir, exist_ok=True)
-
         logging.info(f'Video Enabled: {self.video_enabled}')
+        self.video_temp_dir:str = os.path.expanduser(self.config.video_temp) if self.config.video else None
+        if self.config.video:
+            os.makedirs(self.video_temp_dir, exist_ok=True)
+
+            if '%' in self.video_temp_dir:
+                self.video_temp_dir = datetime.strftime(datetime.now(), self.config.outdir)
+            os.makedirs(self.video_temp_dir, exist_ok=True)
 
     VIDEO_CLIP_DURATION = timedelta(seconds=15)
     @property
     def video_enabled(self):
-        return self.motion_event_queue is not None
+        return self.config.video
 
     def create_camera(self):
+        logging.info(f'Video Mode: {self.config.video}')
         self.camera:Camera = Camera(self.width, self.height,
                                     zoom=self.config.zoom,
                                     exposure_mode=self.config.exposure_mode,
                                     meter_mode=self.config.meter_mode,
                                     awb_mode=self.config.awb_mode,
                                     aspect_ratio=self.ar,
-                                    iso=self.config.iso)
-        if self.config.framerate:
-            self.config.framerate_delta = timedelta(seconds=self.config.framerate)
+                                    iso=self.config.iso,
+                                    video=self.config.video)
 
         self.light_meter = LightMeter()
         logging.info(f'Light meter available: {self.light_meter.available}')
@@ -262,8 +264,8 @@ class CameraProducer(ImageProducer):
 
             timestamp_pattern:str = '%Y%m%d_%H%M%S.%f'
             timestamp = datetime.now()
-            filename = f'{timestamp.strftime(timestamp_pattern)}_motion.mjpeg'
-            filepath = os.path.join(self.video_outdir, filename)
+            filename = f'{timestamp.strftime(timestamp_pattern)}_motion.h264'
+            filepath = os.path.join(self.video_temp_dir, filename)
             self.camera.start_video_capture(filepath)
             logging.info(f'Starting video clip {filepath}')
             self.current_video_clip = {

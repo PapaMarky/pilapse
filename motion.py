@@ -66,6 +66,15 @@ class MotionDetectionApp(Configurable):
         motion.add_argument('--all-frames', action='store_true',
                            help='Save all images even when no motion is detected')
 
+        motion.add_argument('--video', action='store_true',
+                            help='capture video clips of motion when detected')
+        motion.add_argument('-video-temp', type=str, default='~/.pilapse/video-temp',
+                            help='Temporary directory where unprocessed video clips will be stored')
+        motion.add_argument('--video-dir', type=str,
+                            help='Directory where processed video clips will be stored. Defaults to same location '
+                                 'as where still images are stored')
+
+
         MotionDetectionApp.ARGS_ADDED = True
         # Add the args of Configurables that MotionDetectionApp uses
         CameraProducer.add_arguments_to_parser(parser)

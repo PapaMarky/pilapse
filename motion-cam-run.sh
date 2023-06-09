@@ -71,6 +71,10 @@ if [[ ! -z $LOGLEVEL ]]; then
   CMD="$CMD --loglevel $LOGLEVEL "
 fi
 
+if [[ ! -z $VIDEO ]]; then
+  CMD="$CMD --video "
+fi
+
 echo "CMD: $CMD"
 
 $CMD
