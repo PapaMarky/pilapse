@@ -5,6 +5,8 @@ import threading
 import time
 from datetime import datetime
 
+import cv2
+
 from threads import ImageConsumer
 from video_clip import VideoClip
 
@@ -50,13 +52,43 @@ class MotionVideoProcessor(ImageConsumer):
                 self.check_in_queue()
                 break
 
+    def convert_video(self, clip:VideoClip):
+        new_path = os.path.splitext(clip.filename)[0] + '.mov'
+        logging.info(f'converting {clip.filename} to {new_path}')
+        video_cap = cv2.VideoCapture(clip.filename)
+        frame_width = int(video_cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        frame_height = int(video_cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        fps = int(video_cap.get(cv2.CAP_PROP_FPS))
+
+        capSize = (frame_width, frame_height) # this is the size of my source video
+        fourcc = cv2.VideoWriter_fourcc('m', 'p', '4', 'v') # note the lower case
+        video = cv2.VideoWriter()
+        success = video.open(new_path, fourcc, fps, capSize)
+        if not success:
+            raise Exception(f'Failed to open file for converted video: {new_path}')
+
+        while True:
+            success, frame = video_cap.read()
+            if not success:
+                # assume we hit the end of the video clip we are converting
+                break
+            video.write(frame)
+
+        os.remove(clip.filename)
+        # delete the incoming clip
+        video_cap.release()
+        video.release()
+
+        return new_path
+
     def consume_image(self, clip:VideoClip):
         path = clip.filename
         if not clip.has_motion:
             logging.debug(f'deleting clip with no motion: {path}')
             os.remove(path)
         elif self.outdir != self.video_temp:
-            logging.info(f'saving {os.path.basename(path)}')
-            out_path = os.path.join(self.video_dir, os.path.basename(path))
-            os.rename(path, out_path)
+            clip_path = self.convert_video(clip)
+            logging.info(f'saving {os.path.basename(clip_path)}')
+            out_path = os.path.join(self.video_dir, os.path.basename(clip_path))
+            os.rename(clip_path, out_path)
 

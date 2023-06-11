@@ -267,7 +267,7 @@ class CameraProducer(ImageProducer):
     def start_video_clip(self):
         if self.video_enabled and not self.shutdown_event.is_set():
             if self.current_video_clip is not None:
-                logging.error(f'Starting video, but current video is {self.current_video_clip}')
+                logging.error(f'Starting video, but current video is {self.current_video_clip.filename}')
 
             timestamp_pattern:str = '%Y%m%d_%H%M%S.%f'
             timestamp = datetime.now()
@@ -275,7 +275,7 @@ class CameraProducer(ImageProducer):
             filepath = os.path.join(self.video_temp_dir, filename)
             self.camera.start_video_capture(filepath)
             self.current_video_clip = VideoClip(filepath, duration=self.VIDEO_CLIP_DURATION)
-            logging.debug(f'Started new video clip: {self.current_video_clip}')
+            logging.debug(f'Started new video clip: {self.current_video_clip.filename}')
 
     def end_video_clip(self):
         if self.video_enabled:
@@ -284,7 +284,7 @@ class CameraProducer(ImageProducer):
                 return
             self.camera.stop_video_capture()
             self.current_video_clip.finish()
-            logging.debug(f'Ending clip: {self.current_video_clip}')
+            logging.debug(f'Ending clip: {self.current_video_clip.filename}')
             self.video_clip_queue.put(self.current_video_clip)
             self.current_video_clip = None
 
@@ -302,7 +302,10 @@ class CameraProducer(ImageProducer):
 
             now = datetime.now() # TODO use self.now?
             if self.current_video_clip.end_time <= now:
-                logging.debug(f'time to end clip passed: {self.current_video_clip.end_time}')
+                if self.current_video_clip.has_motion:
+                    logging.info(f'time to end clip passed: {self.current_video_clip.end_time}')
+                else:
+                    logging.debug(f'time to end clip passed: {self.current_video_clip.end_time}')
                 self.end_video_clip()
                 self.start_video_clip()
 
@@ -387,7 +390,7 @@ class CameraProducer(ImageProducer):
                         logging.error(f'Got Motion Detected event but no current video')
                         return
                     self.current_video_clip.add_motion_detection(command['timestamp'])
-                    logging.info(f'Motion detected event. Extending current video clip end time: {self.current_video_clip}')
+                    logging.info(f'Motion detected event. Extending current video clip end time: {self.current_video_clip.end_time}')
             else:
                 self.shutdown_event.wait(0.001)
 
