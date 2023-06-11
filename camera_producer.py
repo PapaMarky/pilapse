@@ -18,9 +18,9 @@ from threads import ImageProducer, CameraImage
 from scheduling import Schedule
 from light_meter import LightMeter
 from suntime import Suntime
+from video_clip import VideoClip
 
 from datetime import datetime, timedelta
-
 
 class CameraProducer(ImageProducer):
     # TODO base class producer should be aware of
@@ -188,7 +188,7 @@ class CameraProducer(ImageProducer):
         self.system = SystemResources()
 
         self.motion_event_queue = motion_event_queue
-        self.current_video_clip = None
+        self.current_video_clip:VideoClip = None
         logging.info(f'Video Enabled: {self.video_enabled}')
         self.video_temp_dir:str = os.path.expanduser(self.config.video_temp) if self.config.video else None
         self.video_clip_queue:queue.Queue = video_clip_queue
@@ -274,12 +274,7 @@ class CameraProducer(ImageProducer):
             filename = f'{timestamp.strftime(timestamp_pattern)}_motion.h264'
             filepath = os.path.join(self.video_temp_dir, filename)
             self.camera.start_video_capture(filepath)
-            self.current_video_clip = {
-                'start_time': timestamp,
-                'end_time': timestamp + self.VIDEO_CLIP_DURATION,
-                'file': filepath,
-                'motion': False
-            }
+            self.current_video_clip = VideoClip(filepath, duration=self.VIDEO_CLIP_DURATION)
             logging.debug(f'Started new video clip: {self.current_video_clip}')
 
     def end_video_clip(self):
@@ -288,7 +283,7 @@ class CameraProducer(ImageProducer):
                 logging.error(f'Ending video that has not started yet')
                 return
             self.camera.stop_video_capture()
-            self.current_video_clip['end_time'] = datetime.now()
+            self.current_video_clip.finish()
             logging.debug(f'Ending clip: {self.current_video_clip}')
             self.video_clip_queue.put(self.current_video_clip)
             self.current_video_clip = None
@@ -306,8 +301,8 @@ class CameraProducer(ImageProducer):
             self.camera.check_video_capture()
 
             now = datetime.now() # TODO use self.now?
-            if self.current_video_clip['end_time'] <= now:
-                logging.debug(f'time to end clip passed: {self.current_video_clip["end_time"]}')
+            if self.current_video_clip.end_time <= now:
+                logging.debug(f'time to end clip passed: {self.current_video_clip.end_time}')
                 self.end_video_clip()
                 self.start_video_clip()
 
@@ -388,11 +383,10 @@ class CameraProducer(ImageProducer):
                 command = self.motion_event_queue.get()
                 logging.info(f'Motion Command: {command}')
                 if command['event'] == 'motion-detected':
-                    self.current_video_clip['motion'] = True
                     if self.current_video_clip is None:
                         logging.error(f'Got Motion Detected event but no current video')
                         return
-                    self.current_video_clip['end_time'] = datetime.now() + self.VIDEO_CLIP_DURATION
+                    self.current_video_clip.add_motion_detection(command['timestamp'])
                     logging.info(f'Motion detected event. Extending current video clip end time: {self.current_video_clip}')
             else:
                 self.shutdown_event.wait(0.001)

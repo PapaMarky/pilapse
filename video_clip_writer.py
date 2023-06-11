@@ -6,6 +6,7 @@ import time
 from datetime import datetime
 
 from threads import ImageConsumer
+from video_clip import VideoClip
 
 
 class MotionVideoProcessor(ImageConsumer):
@@ -19,6 +20,8 @@ class MotionVideoProcessor(ImageConsumer):
             self.video_dir = self.config.video_dir
             if '%' in self.video_dir:
                 self.video_dir = datetime.strftime(self.now, self.config.video_dir)
+
+
 
     def set_outdir(self):
         super().set_outdir()
@@ -47,14 +50,13 @@ class MotionVideoProcessor(ImageConsumer):
                 self.check_in_queue()
                 break
 
-    def consume_image(self, image):
-        path = image['file']
-        if not image['motion']:
+    def consume_image(self, clip:VideoClip):
+        path = clip.filename
+        if not clip.has_motion:
             logging.debug(f'deleting clip with no motion: {path}')
             os.remove(path)
         elif self.outdir != self.video_temp:
-            logging.info(f'Moving {path} to {self.video_dir}')
+            logging.info(f'saving {os.path.basename(path)}')
             out_path = os.path.join(self.video_dir, os.path.basename(path))
-            logging.info(f'Moving {path} to {out_path}')
             os.rename(path, out_path)
 
