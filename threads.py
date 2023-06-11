@@ -172,6 +172,9 @@ class PilapseThread(threading.Thread):
         self.report_time:datetime = self.start_time + self.report_wait
         self.now = datetime.now()
 
+    def on_shutdown(self):
+        pass
+
     def start_work(self):
         self.start_time = datetime.now()
         self.report_time:datetime = self.start_time + self.report_wait
@@ -263,7 +266,7 @@ class ImageProducer(PilapseThread, Configurable):
             return
         if image is not None:
             self.nframes_count += 1
-            logging.debug(f'ADDING IMAGE {self.nframes_count} TO QUEUE')
+            logging.debug(f'ADDING IMAGE {self.nframes_count} TO QUEUE (q size: {self.out_queue.qsize()})')
             self.out_queue.put(image)
             if self.config.nframes is not None and self.nframes_count >= self.config.nframes:
                 logging.info(f'nframes ({self.nframes_count}) from config ({self.config.nframes}) exceeded. Stopping.')
@@ -277,6 +280,7 @@ class ImageProducer(PilapseThread, Configurable):
         while True:
             if shutdown_event.is_set():
                 logging.info('Shutdown event received')
+                self.on_shutdown()
                 break
             self.now = datetime.now()
             if self.preproduce():
@@ -461,7 +465,7 @@ class ImageConsumer(PilapseThread):
             if self.in_queue.empty():
                 logging.info('Queue is empty. Shutting down')
                 return True
-            logging.warning(f'Trying to shutdown, but queue not empty: {self.in_queue.qsize()}')
+            logging.warning(f'Trying to shutdown {self.getName()}, but in queue not empty: {self.in_queue.qsize()}')
             self.force_consume = True
         return False
 
@@ -478,7 +482,7 @@ class ImageConsumer(PilapseThread):
 
     def do_work(self) -> None:
         self.start_work()
-        logging.info(f'Starting ImageConsumer (do_work) ({self.start_time.strftime("%Y/%m/%d %H:%M:%S")})')
+        logging.info(f'Starting {type(self)} (do_work) ({self.start_time.strftime("%Y/%m/%d %H:%M:%S")})')
         logging.debug(f'Config: {self.config}')
         self.paused = False if self.config.run_from is None else True
         force_consume = False

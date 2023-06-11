@@ -102,7 +102,7 @@ class Camera():
 
     def start_video_capture(self, filename):
         self.picamera.start_recording(filename, format=None) #'mjpeg')
-        logging.info(f'Started recording video: {filename}')
+        logging.debug(f'Started recording video: {filename}')
 
     def stop_video_capture(self):
         self.picamera.stop_recording()

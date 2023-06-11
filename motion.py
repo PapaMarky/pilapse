@@ -13,6 +13,9 @@ from threads import DirectoryProducer, MotionPipeline, ImageWriter
 import logging
 import time
 
+from video_clip_writer import MotionVideoProcessor
+
+
 def BGR(r, g, b):
     return (b, g, r)
 
@@ -89,6 +92,7 @@ class MotionDetectionApp(Configurable):
         self._directory_producer:DirectoryProducer = None
         self._motion_pipeline:MotionPipeline = None
         self._image_writer:ImageWriter = None
+        self._video_writer:MotionVideoProcessor = None
 
         parser = Configurable.create_parser('Motion Detection App for Raspberry Pi')
         self._parser = MotionDetectionApp.add_arguments_to_parser(parser)
@@ -99,7 +103,9 @@ class MotionDetectionApp(Configurable):
             self.process_config(self._config)
             self.front_queue = Queue()
             self.back_queue = Queue()
-            self.motion_event_queue = Queue()
+            self.motion_event_queue = Queue() if self._config.video else None
+            self.video_clip_queue = Queue() if self._config.video else None
+            logging.info(f'Motion Event Queue: {self.motion_event_queue}')
             self._shutdown_event = threading.Event()
 
     def load_from_list(self, parser, arglist=None):
@@ -130,24 +136,35 @@ class MotionDetectionApp(Configurable):
         ###
         # Create a Motion Consumer and Image Producer. Start them up.
 
-        producer = None
+        if self._config.video:
+            video_writer = MotionVideoProcessor(self._shutdown_event, self._config, in_queue=self.video_clip_queue)
+            self._video_writer = video_writer
+
         if self._config.source_dir:
             # load images from directory
             producer = DirectoryProducer('jpg', self._shutdown_event, self._config, out_queue=self.front_queue)
             self._directory_producer = producer
         else:
             # create images using camera
-            producer = CameraProducer(self._shutdown_event, self._config, out_queue=self.front_queue,
-                                      motion_event_queue=self.motion_event_queue)
+
+            producer = CameraProducer(self._shutdown_event, self._config,
+                                      out_queue=self.front_queue,
+                                      motion_event_queue=self.motion_event_queue,
+                                      video_clip_queue=self.video_clip_queue
+                                      )
             self._camera_producer = producer
         self._motion_pipeline = MotionPipeline(self._shutdown_event, self._config,
                                                in_queue=self.front_queue,
                                                out_queue=self.back_queue,
                                                motion_event_queue=self.motion_event_queue)
+
+
         self._image_writer = ImageWriter(self._shutdown_event, self._config, in_queue=self.back_queue)
 
         self._image_writer.start()
         self._motion_pipeline.start()
+        if self._video_writer is not None:
+            self._video_writer.start()
         producer.start()
 
         while True:
@@ -178,7 +195,7 @@ class MotionDetectionApp(Configurable):
                 except Exception as e:
                     logging.exception(e)
 
-                logging.info('Waiting for writer...')
+                logging.info('Waiting for image writer...')
                 try:
                     writer.join(5.0)
                     if writer.is_alive():
@@ -187,6 +204,16 @@ class MotionDetectionApp(Configurable):
                     logging.exception(e)
 
                 break
+                logging.info('Waiting for video writer...')
+                try:
+                    video_writer.join(5.0)
+                    if video_writer.is_alive():
+                        logging.warning('- Timed out, video_writer is still alive.')
+                except Exception as e:
+                    logging.exception(e)
+
+                break
+
             self._shutdown_event.wait(1)
             if self._shutdown_event.is_set():
                 pl.set_time_to_die()

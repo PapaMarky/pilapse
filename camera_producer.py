@@ -154,6 +154,7 @@ class CameraProducer(ImageProducer):
     def __init__(self,
                  shutdown_event:threading.Event, config:argparse.Namespace,
                  motion_event_queue:queue.Queue=None,
+                 video_clip_queue:queue.Queue=None,
                  **kwargs):
         super(CameraProducer, self).__init__('CameraProducer', shutdown_event, config, **kwargs)
         logging.debug(f'CameraProducer init {self.name}')
@@ -190,14 +191,16 @@ class CameraProducer(ImageProducer):
         self.current_video_clip = None
         logging.info(f'Video Enabled: {self.video_enabled}')
         self.video_temp_dir:str = os.path.expanduser(self.config.video_temp) if self.config.video else None
+        self.video_clip_queue:queue.Queue = video_clip_queue
         if self.config.video:
-            os.makedirs(self.video_temp_dir, exist_ok=True)
-
             if '%' in self.video_temp_dir:
                 self.video_temp_dir = datetime.strftime(datetime.now(), self.config.outdir)
             os.makedirs(self.video_temp_dir, exist_ok=True)
 
-    VIDEO_CLIP_DURATION = timedelta(seconds=15)
+        if self.config.framerate:
+            self.config.framerate_delta = timedelta(seconds=float(self.config.framerate))
+
+    VIDEO_CLIP_DURATION = timedelta(seconds=3)
     @property
     def video_enabled(self):
         return self.config.video
@@ -257,6 +260,10 @@ class CameraProducer(ImageProducer):
             iso = self.config.iso
         return iso, shutter_speed
 
+    def on_shutdown(self):
+        logging.warning(f'{self.name} shutdown event received')
+        self.check_video_clip()
+
     def start_video_clip(self):
         if self.video_enabled and not self.shutdown_event.is_set():
             if self.current_video_clip is not None:
@@ -267,14 +274,13 @@ class CameraProducer(ImageProducer):
             filename = f'{timestamp.strftime(timestamp_pattern)}_motion.h264'
             filepath = os.path.join(self.video_temp_dir, filename)
             self.camera.start_video_capture(filepath)
-            logging.info(f'Starting video clip {filepath}')
             self.current_video_clip = {
                 'start_time': timestamp,
                 'end_time': timestamp + self.VIDEO_CLIP_DURATION,
                 'file': filepath,
                 'motion': False
             }
-            logging.info(f'new video clip: {self.current_video_clip}')
+            logging.debug(f'Started new video clip: {self.current_video_clip}')
 
     def end_video_clip(self):
         if self.video_enabled:
@@ -282,23 +288,26 @@ class CameraProducer(ImageProducer):
                 logging.error(f'Ending video that has not started yet')
                 return
             self.camera.stop_video_capture()
-            if not self.current_video_clip['motion']:
-                # delete the clip if it has no motion
-                pass
+            self.current_video_clip['end_time'] = datetime.now()
+            logging.debug(f'Ending clip: {self.current_video_clip}')
+            self.video_clip_queue.put(self.current_video_clip)
             self.current_video_clip = None
-            self.shutdown_event.set()
 
     def check_video_clip(self):
         if self.video_enabled:
+            if self.shutdown_event.is_set():
+                if self.current_video_clip is not None:
+                    logging.info(f'check_video_clip: shutdown event. Stopping current video.')
+                    self.end_video_clip()
+                return
             if self.current_video_clip is None:
                 self.start_video_clip()
             # TODO this can raise an exception
             self.camera.check_video_capture()
 
-            now = datetime.now()
+            now = datetime.now() # TODO use self.now?
             if self.current_video_clip['end_time'] <= now:
-                logging.info(f'time to end clip passed: {self.current_video_clip["end_time"]}')
-                logging.info(self.current_video_clip)
+                logging.debug(f'time to end clip passed: {self.current_video_clip["end_time"]}')
                 self.end_video_clip()
                 self.start_video_clip()
 
@@ -379,13 +388,16 @@ class CameraProducer(ImageProducer):
                 command = self.motion_event_queue.get()
                 logging.info(f'Motion Command: {command}')
                 if command['event'] == 'motion-detected':
-                    logging.info(f'Motion detected event. Extending current video clip end time')
+                    self.current_video_clip['motion'] = True
                     if self.current_video_clip is None:
                         logging.error(f'Got Motion Detected event but no current video')
                         return
                     self.current_video_clip['end_time'] = datetime.now() + self.VIDEO_CLIP_DURATION
+                    logging.info(f'Motion detected event. Extending current video clip end time: {self.current_video_clip}')
             else:
                 self.shutdown_event.wait(0.001)
+
+        self.check_video_clip()
 
         if not super().preproduce():
             return False
@@ -401,8 +413,6 @@ class CameraProducer(ImageProducer):
             self.shutdown_event.set()
             return False
 
-        self.check_video_clip()
-
         if self.config.auto_cam:
             iso, shutter_speed = self.calculate_camera_settings()
             self.camera.picamera.iso = iso
@@ -412,7 +422,8 @@ class CameraProducer(ImageProducer):
         return True
     def produce_image(self) -> str:
         if self.shutdown_event.is_set():
-            self.end_video_clip()
+            if self.current_video_clip is not None:
+                self.end_video_clip()
         else:
             if self.out_queue.full():
                 logging.warning('Output Queue is full')

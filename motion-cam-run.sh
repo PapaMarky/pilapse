@@ -5,6 +5,10 @@
 CMD="python3 ./motion.py --outdir $OUTDIR --width $WIDTH --height $HEIGHT --zoom $ZOOM --top $TOP --bottom $BOTTOM"
 CMD="${CMD} --left $LEFT --right $RIGHT --mindiff $MINDIFF --threshold $THRESHOLD --dilation $DILATION --prefix $PREFIX"
 
+if [[ ! -z $FRAMERATE ]]; then
+  CMD="$CMD --framerate $FRAMERATE "
+fi
+
 if [[ ! -z $TESTFRAME ]]; then
   CMD="$CMD --testframe \
   "
