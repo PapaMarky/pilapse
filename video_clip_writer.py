@@ -88,7 +88,8 @@ class MotionVideoProcessor(ImageConsumer):
             os.remove(path)
         elif self.outdir != self.video_temp:
             clip_path = self.convert_video(clip)
-            logging.info(f'saving {os.path.basename(clip_path)}')
+            logging.info(f'Saving {os.path.basename(clip_path)}')
             out_path = os.path.join(self.video_dir, os.path.basename(clip_path))
+            logging.info(f'Moving {clip_path} to {out_path}')
             os.rename(clip_path, out_path)
 

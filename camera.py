@@ -101,23 +101,23 @@ class Camera():
         return self._model
 
     def start_video_capture(self, filename):
-        self.picamera.start_recording(filename, format=None) #'mjpeg')
+        self.picamera.start_recording(filename, format=None, splitter_port=1)
         logging.debug(f'Started recording video: {filename}')
 
     def stop_video_capture(self):
-        self.picamera.stop_recording()
+        self.picamera.stop_recording(splitter_port=1)
 
     def check_video_capture(self):
         """
         Give the video capture a chance to throw exceptions. Returns immediately or raises an exception
         :return:
         """
-        self.picamera.wait_recording()
+        self.picamera.wait_recording(splitter_port=1)
 
     def capture(self) -> PiRGBArray:
         logging.debug('Capturing image')
         rawCapture = PiRGBArray(self.camera)
-        self.camera.capture(rawCapture, format="bgr")
+        self.camera.capture(rawCapture, format="bgr", splitter_port=0)
         image = rawCapture.array
         return image
 
