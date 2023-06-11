@@ -3,13 +3,13 @@ from datetime import datetime, timedelta
 
 
 class VideoClip:
-    def __init__(self, filename, duration=timedelta(seconds=3)):
+    def __init__(self, filename, duration=timedelta(seconds=5)):
         self.start_time:datetime = datetime.now()
         self._filename = filename
         self._end_time:datetime = self.start_time + duration
         self.first_motion:datetime = None
         self.last_motion:datetime = None
-        self.motion_duration:timedelta = timedelta(seconds=3)
+        self.motion_duration:timedelta = duration
         self.finished = False
 
     @property

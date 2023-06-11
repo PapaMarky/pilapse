@@ -200,7 +200,7 @@ class CameraProducer(ImageProducer):
         if self.config.framerate:
             self.config.framerate_delta = timedelta(seconds=float(self.config.framerate))
 
-    VIDEO_CLIP_DURATION = timedelta(seconds=3)
+    VIDEO_CLIP_DURATION = timedelta(seconds=8)
     @property
     def video_enabled(self):
         return self.config.video
@@ -264,6 +264,9 @@ class CameraProducer(ImageProducer):
         logging.warning(f'{self.name} shutdown event received')
         self.check_video_clip()
 
+    def add_video_clip_to_queue(self, clip):
+        self.video_clip_queue.put(clip)
+
     def start_video_clip(self):
         if self.video_enabled and not self.shutdown_event.is_set():
             if self.current_video_clip is not None:
@@ -285,7 +288,7 @@ class CameraProducer(ImageProducer):
             self.camera.stop_video_capture()
             self.current_video_clip.finish()
             logging.debug(f'Ending clip: {self.current_video_clip.filename}')
-            self.video_clip_queue.put(self.current_video_clip)
+            self.add_video_clip_to_queue(self.current_video_clip)
             self.current_video_clip = None
 
     def check_video_clip(self):

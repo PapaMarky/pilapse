@@ -33,10 +33,12 @@ class Camera():
         # setting framerate_range throws an exception when start_recording is called:
         # picamera.exc.PiCameraValueError: framerate_delta cannot be used with framerate_range
         framerate_range = None if video else (1/10, 40)
+        framerate = 30 if video else 0
         logging.info(f'Video mode: {video}')
         logging.info(f'framerate_range: {framerate_range}')
         self.camera = PiCamera(sensor_mode=self._sensor_mode,
                                framerate_range=framerate_range,
+                               framerate=framerate,
                                resolution=(width,height))
         modes = []
         for m in PiCamera.EXPOSURE_MODES:
