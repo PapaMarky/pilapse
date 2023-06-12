@@ -497,6 +497,7 @@ class CameraProducer(ImageProducer):
                 logging.error(f'Exception capturing image: {e}')
                 logging.info(f'Trying to recover from camera exception')
                 # give the camera some time (arbitrary) to recover from the error
+                self.camera.shutdown()
                 self.camera = None
                 self.create_camera()
                 return

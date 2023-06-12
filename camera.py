@@ -127,3 +127,6 @@ class Camera():
         logging.debug(f'snap_picture({filename})')
         self.camera.capture(filename)
 
+    def shutdown(self):
+        if self.camera is not None:
+            self.camera.close()
