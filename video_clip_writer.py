@@ -54,11 +54,14 @@ class MotionVideoProcessor(ImageConsumer):
 
     def convert_video(self, clip:VideoClip):
         new_path = os.path.splitext(clip.filename)[0] + '.mov'
-        video_cap = cv2.VideoCapture(clip.filename)
+
+        file_number = 0
+        filename = clip._filelist[file_number]
+        video_cap = cv2.VideoCapture(filename)
         frame_width = int(video_cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         frame_height = int(video_cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         fps = int(video_cap.get(cv2.CAP_PROP_FPS))
-        logging.info(f'converting {clip.filename} to {new_path} (FPS: {fps})')
+        logging.info(f'converting {filename} to {new_path} (FPS: {fps})')
 
         capSize = (frame_width, frame_height) # this is the size of my source video
         fourcc = cv2.VideoWriter_fourcc('m', 'p', '4', 'v') # note the lower case
@@ -68,10 +71,20 @@ class MotionVideoProcessor(ImageConsumer):
             raise Exception(f'Failed to open file for converted video: {new_path}')
 
         frame_count = 0
+
         while True:
             success, frame = video_cap.read()
             if not success:
                 # assume we hit the end of the video clip we are converting
+                file_number += 1
+                if file_number < len(clip._filelist):
+                    filename = clip._filelist[file_number]
+                    logging.info(f'Appending clip: {filename}')
+                    video_cap = cv2.VideoCapture(filename)
+                    success, frame = video_cap.read()
+                    if not success:
+                        logging.error('Could not read first frame from next clip')
+                        break
                 break
             frame_count += 1
             video.write(frame)
