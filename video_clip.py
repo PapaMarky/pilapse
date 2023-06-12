@@ -7,6 +7,7 @@ class VideoClip:
 
     def __init__(self, filename, duration=timedelta(seconds=5)):
         self.start_time:datetime = datetime.now()
+        self._filename = filename
         self._filelist = [filename]
         self._end_time:datetime = self.start_time + duration
         self.first_motion:datetime = None
@@ -64,9 +65,12 @@ class VideoClip:
 
     def add_motion_detection(self, motion_time):
         if motion_time < self.start_time:
+            logging.info(f'Motion too early (motion: {motion_time} vs start {self.start_time})')
             return False
         if self.finished and (motion_time > self._end_time):
+            logging.info(f'Motion too late (motion {motion_time} vs end {self.end_time})')
             return False
+        logging.info(f'Updating motion time')
         if self.first_motion is None:
             self.first_motion = motion_time
         self.last_motion = motion_time

@@ -22,7 +22,8 @@ class MotionVideoProcessor(ImageConsumer):
             self.video_dir = self.config.video_dir
             if '%' in self.video_dir:
                 self.video_dir = datetime.strftime(self.now, self.config.video_dir)
-
+        logging.info(f'config video dir: {self.config.video_dir}')
+        logging.info(f'       video dir: {self.video_dir}')
 
 
     def set_outdir(self):
@@ -62,6 +63,7 @@ class MotionVideoProcessor(ImageConsumer):
         frame_height = int(video_cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         fps = int(video_cap.get(cv2.CAP_PROP_FPS))
         logging.info(f'converting {filename} to {new_path} (FPS: {fps})')
+        logging.info(f'files: {clip._filelist}')
 
         capSize = (frame_width, frame_height) # this is the size of my source video
         fourcc = cv2.VideoWriter_fourcc('m', 'p', '4', 'v') # note the lower case

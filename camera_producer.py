@@ -189,6 +189,8 @@ class CameraProducer(ImageProducer):
 
         self.motion_event_queue = motion_event_queue
         self.current_video_clip:VideoClip = None
+        self.previous_video_clip:VideoClip = None
+
         logging.info(f'Video Enabled: {self.video_enabled}')
         self.video_temp_dir:str = os.path.expanduser(self.config.video_temp) if self.config.video else None
         self.video_clip_queue:queue.Queue = video_clip_queue
@@ -200,7 +202,6 @@ class CameraProducer(ImageProducer):
         if self.config.framerate:
             self.config.framerate_delta = timedelta(seconds=float(self.config.framerate))
 
-        self.clip_list = []
 
     VIDEO_CLIP_DURATION = timedelta(seconds=8)
     @property
@@ -266,23 +267,19 @@ class CameraProducer(ImageProducer):
         logging.warning(f'{self.name} shutdown event received')
         self.check_video_clip()
 
-    def flush_clip_list(self):
-        for clip in self.clip_list:
-            self.video_clip_queue.put(clip)
+    def on_clip_complete(self):
+        if self.previous_video_clip is not None:
+            if self.previous_video_clip.has_late_motion or \
+                (self.previous_video_clip.has_motion and self.current_video_clip.has_motion) or \
+                self.current_video_clip.has_early_motion:
+                self.previous_video_clip.merge(self.current_video_clip)
+            else:
+                self.video_clip_queue.put(self.previous_video_clip)
+                self.previous_video_clip = self.current_video_clip
+        else:
+            self.previous_video_clip = self.current_video_clip
 
-    def add_video_clip_to_queue(self, clip):
-        MAX_CLIPS = 3
-        self.clip_list.append(clip)
-        if len(self.clip_list) >= MAX_CLIPS:
-            out_clip = self.clip_list.pop(0)
-            if (out_clip.has_motion and self.clip_list[0].has_motion) or \
-                    out_clip.has_late_motion or \
-                    self.clip_list[0].has_early_motion:
-                clip0 = self.clip_list.pop(0)
-                out_clip.merge(clip0)
-                self.clip_list.insert(0)
-                return
-            self.video_clip_queue.put(out_clip)
+        self.current_video_clip = None
 
     def start_video_clip(self):
         if self.video_enabled and not self.shutdown_event.is_set():
@@ -295,7 +292,7 @@ class CameraProducer(ImageProducer):
             filepath = os.path.join(self.video_temp_dir, filename)
             self.camera.start_video_capture(filepath)
             self.current_video_clip = VideoClip(filepath, duration=self.VIDEO_CLIP_DURATION)
-            logging.debug(f'Started new video clip: {self.current_video_clip.filename}')
+            logging.info(f'Started new video clip: {self.current_video_clip.filename}')
 
     def end_video_clip(self):
         if self.video_enabled:
@@ -304,9 +301,8 @@ class CameraProducer(ImageProducer):
                 return
             self.camera.stop_video_capture()
             self.current_video_clip.finish()
-            logging.debug(f'Ending clip: {self.current_video_clip.filename}')
-            self.add_video_clip_to_queue(self.current_video_clip)
-            self.current_video_clip = None
+            logging.info(f'Ending clip: {self.current_video_clip.filename}')
+            self.on_clip_complete()
 
     def check_video_clip(self):
         if self.video_enabled:
@@ -410,21 +406,10 @@ class CameraProducer(ImageProducer):
                         logging.error(f'Got Motion Detected event but no current video')
                         return
                     i = 0
-                    list_length = len(self.clip_list)
-                    for i in list_length:
-                        if self.clip_list[i].add_motion_detection(command['timestamp']):
-                            clip = self.clip_list[i]
-                            if i > 0:
-                                previous_clip = self.clip_list[i - 1]
-                                if previous_clip.has_late_motion or clip.has_early_motion:
-                                    clip = self.clip_list.pop(i)
-                                    previous_clip.merge(clip)
-                            elif i < list_length - 1:
-                                next_clip = self.clip_list[i + 1]
-                                if clip.has_late_motion or next_clip.has_early_motion:
-
-                            break
-                    logging.info(f'Motion detected event. Extending current video clip end time: {self.current_video_clip.end_time}')
+                    if not self.current_video_clip.add_motion_detection(command['timestamp']):
+                        logging.warning(f'Motion event outside current: {command}')
+                        if not self.previous_video_clip.add_motion_detection(command['timestampe']):
+                            logging.error(f'Motion event outside previous: {command}')
             else:
                 self.shutdown_event.wait(0.001)
 
