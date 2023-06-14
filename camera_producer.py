@@ -203,7 +203,8 @@ class CameraProducer(ImageProducer):
             self.config.framerate_delta = timedelta(seconds=float(self.config.framerate))
 
 
-    VIDEO_CLIP_DURATION = timedelta(seconds=8)
+    VIDEO_CLIP_DURATION = timedelta(seconds=3)
+    MOTION_DURATION = 2 * VIDEO_CLIP_DURATION
     @property
     def video_enabled(self):
         return self.config.video
@@ -269,14 +270,27 @@ class CameraProducer(ImageProducer):
 
     def on_clip_complete(self):
         if self.previous_video_clip is not None:
-            if self.previous_video_clip.has_late_motion or \
-                (self.previous_video_clip.has_motion and self.current_video_clip.has_motion) or \
-                self.current_video_clip.has_early_motion:
+            # we have a previous clip
+            need_merge = self.current_video_clip.has_motion or \
+                         (self.previous_video_clip.has_motion and not self.current_video_clip.has_motion)
+            if need_merge:
+                # need to merge current into previous
+                logging.info(f'Merging {os.path.basename(self.current_video_clip.filename)} into '
+                             f'{os.path.basename(self.previous_video_clip.filename)}')
                 self.previous_video_clip.merge(self.current_video_clip)
+                # if the current clip does not have motion, we are done with this combined clip.
+                if not self.current_video_clip.has_motion:
+                    logging.info(f'Done with both clips')
+                    self.video_clip_queue.put(self.previous_video_clip)
+                    self.current_video_clip = None
+                    self.previous_video_clip = None
             else:
+                # Do not need to merge current into previous. We are done with previous
+                logging.info(f'Done with previous clip')
                 self.video_clip_queue.put(self.previous_video_clip)
                 self.previous_video_clip = self.current_video_clip
         else:
+            # We do not have a previous clip
             self.previous_video_clip = self.current_video_clip
 
         self.current_video_clip = None
@@ -284,15 +298,15 @@ class CameraProducer(ImageProducer):
     def start_video_clip(self):
         if self.video_enabled and not self.shutdown_event.is_set():
             if self.current_video_clip is not None:
-                logging.error(f'Starting video, but current video is {self.current_video_clip.filename}')
+                logging.error(f'Starting video, but current video is {os.path.basename(self.current_video_clip.filename)}')
 
             timestamp_pattern:str = '%Y%m%d_%H%M%S.%f'
             timestamp = datetime.now()
             filename = f'{timestamp.strftime(timestamp_pattern)}_motion.h264'
             filepath = os.path.join(self.video_temp_dir, filename)
             self.camera.start_video_capture(filepath)
-            self.current_video_clip = VideoClip(filepath, duration=self.VIDEO_CLIP_DURATION)
-            logging.info(f'Started new video clip: {self.current_video_clip.filename}')
+            self.current_video_clip = VideoClip(filepath, duration=self.MOTION_DURATION)
+            logging.info(f'Start clip: {os.path.basename(self.current_video_clip.filename)}')
 
     def end_video_clip(self):
         if self.video_enabled:
@@ -301,7 +315,9 @@ class CameraProducer(ImageProducer):
                 return
             self.camera.stop_video_capture()
             self.current_video_clip.finish()
-            logging.info(f'Ending clip: {self.current_video_clip.filename}')
+            max_fps = int(1 / self.camera.picamera.shutter_speed)
+            self.current_video_clip.framerate = min(max_fps, self.camera.picamera.framerate)
+            logging.info(f'  End clip: {os.path.basename(self.current_video_clip.filename)} framerate: {self.current_video_clip.framerate}')
             self.on_clip_complete()
 
     def check_video_clip(self):
@@ -400,16 +416,15 @@ class CameraProducer(ImageProducer):
         if self.video_enabled:
             if not self.motion_event_queue.empty():
                 command = self.motion_event_queue.get()
-                logging.info(f'Motion Command: {command}')
+                logging.info(f'Motion Command: {command["timestamp"].strftime("%Y%m%d_%H%M%S.%f")}')
                 if command['event'] == 'motion-detected':
                     if self.current_video_clip is None:
                         logging.error(f'Got Motion Detected event but no current video')
                         return
-                    i = 0
                     if not self.current_video_clip.add_motion_detection(command['timestamp']):
-                        logging.warning(f'Motion event outside current: {command}')
-                        if not self.previous_video_clip.add_motion_detection(command['timestampe']):
-                            logging.error(f'Motion event outside previous: {command}')
+                        logging.warning(f'Motion event outside current: {command["timestamp"].strftime("%Y%m%d_%H%M%S.%f")}')
+                        if not self.previous_video_clip.add_motion_detection(command['timestamp']):
+                            logging.error(f'Motion event outside previous: {command["timestamp"].strftime("%Y%m%d_%H%M%S.%f")}')
             else:
                 self.shutdown_event.wait(0.001)
 

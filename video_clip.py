@@ -1,4 +1,5 @@
 import logging
+import os.path
 from datetime import datetime, timedelta
 
 
@@ -7,37 +8,61 @@ class VideoClip:
 
     def __init__(self, filename, duration=timedelta(seconds=5)):
         self.start_time:datetime = datetime.now()
-        self._filename = filename
         self._filelist = [filename]
         self._end_time:datetime = self.start_time + duration
         self.first_motion:datetime = None
         self.last_motion:datetime = None
         self.motion_duration:timedelta = duration
         self.finished = False
+        self._framerate = None
+
+    def to_string(self):
+        return f'{os.path.basename(self.filename)} {len(self._filelist)} clips ' \
+               f'{self.start_time.strftime("%Y%m%d_%H%M%S.%f")} to {self.end_time.strftime("%Y%m%d_%H%M%S.%f")} ' \
+               f'motion: {self.has_motion}'
 
     def merge(self, other_clip):
+        logging.info(f'Merging:')
+
+        logging.info(f'{other_clip.to_string()} into ')
+        logging.info(f'{self.to_string()}')
         me_first = self.start_time < other_clip.start_time
 
         self.start_time = min(other_clip.start_time, self.start_time)
         if self.finished and other_clip.finished:
-            self._end_time = min(self.end_time, other_clip.end_time)
+            self._end_time = max(self.end_time, other_clip.end_time)
         if self.has_motion:
             if other_clip.has_motion:
                 self.first_motion = min(self.first_motion, other_clip.first_motion)
                 self.last_motion = max(self.last_motion, other_clip.last_motion)
-            else:
-                self.first_motion = other_clip.first_motion
-                self.last_motion = other_clip.last_motion
-        self.finished = self.finished and other_clip.finished
-        if me_first:
-            self._filelist.append(other_clip.filename)
-        else:
-            self._filelist.insert(other_clip.filename, 0)
+        elif other_clip.has_motion:
+            self.first_motion = other_clip.first_motion
+            self.last_motion = other_clip.last_motion
 
+        self.finished = self.finished and other_clip.finished
+
+        self._filelist += other_clip._filelist
+        self._filelist.sort()
+
+        logging.info(f'post merge filelist: {self._filelist}')
+        logging.info(f'start: {self.start_time.strftime("%Y%m%d_%H%M%S.%f")} end: {self.end_time.strftime("%Y%m%d_%H%M%S.%f")}')
+        if self.has_motion:
+            logging.info(f'motion: first {self.first_motion.strftime("%Y%m%d_%H%M%S.%f")} '
+                         f'last {self.last_motion.strftime("%Y%m%d_%H%M%S.%f")}')
+        else:
+            logging.info(f'no motion {self.first_motion} {self.last_motion}')
+
+    @property
+    def framerate(self):
+        return self._framerate
+
+    @framerate.setter
+    def framerate(self, rate):
+        self._framerate = rate
 
     @property
     def filename(self):
-        return self._filename
+        return self._filelist[0]
 
     @property
     def end_time(self):
@@ -46,18 +71,6 @@ class VideoClip:
     @property
     def has_motion(self):
         return self.first_motion is not None
-
-    @property
-    def has_early_motion(self):
-        if self.has_motion:
-            return (self.first_motion - self.start_time) <= self.EARLY_DURATION
-        return False
-
-    @property
-    def has_late_motion(self):
-        if self.has_motion and self.finished:
-            return (self._end_time - self.last_motion) <= self.EARLY_DURATION
-        return False
 
     def finish(self):
         self._end_time = datetime.now()
@@ -70,7 +83,7 @@ class VideoClip:
         if self.finished and (motion_time > self._end_time):
             logging.info(f'Motion too late (motion {motion_time} vs end {self.end_time})')
             return False
-        logging.info(f'Updating motion time')
+        logging.info(f'Updating motion time of {os.path.basename(self.filename)}')
         if self.first_motion is None:
             self.first_motion = motion_time
         self.last_motion = motion_time

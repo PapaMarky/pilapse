@@ -428,6 +428,8 @@ class ImageConsumer(PilapseThread):
                 self.outdir = new_outdir
                 os.makedirs(self.outdir, exist_ok=True)
                 logging.info(f'New outdir: {self.outdir}')
+                return True
+        return False
 
     def preconsume(self):
             """
