@@ -297,18 +297,40 @@ class CameraProducer(ImageProducer):
 
         self.current_video_clip = None
 
+    def create_clip_filename(self):
+        timestamp_pattern:str = '%Y%m%d_%H%M%S.%f'
+        timestamp = datetime.now()
+        filename = f'{timestamp.strftime(timestamp_pattern)}_motion.h264'
+        return os.path.join(self.video_temp_dir, filename)
+
     def start_video_clip(self):
         if self.video_enabled and not self.shutdown_event.is_set():
             if self.current_video_clip is not None:
                 logging.error(f'Starting video, but current video is {os.path.basename(self.current_video_clip.filename)}')
 
-            timestamp_pattern:str = '%Y%m%d_%H%M%S.%f'
-            timestamp = datetime.now()
-            filename = f'{timestamp.strftime(timestamp_pattern)}_motion.h264'
-            filepath = os.path.join(self.video_temp_dir, filename)
+            filepath = self.create_clip_filename()
             self.camera.start_video_capture(filepath)
             self.current_video_clip = VideoClip(filepath, duration=self.MOTION_DURATION)
             logging.info(f'Start clip: {os.path.basename(self.current_video_clip.filename)}')
+
+    def split_video_clip(self):
+        if self.video_enabled:
+            if self.current_video_clip is None:
+                logging.error(f'Splitting video that has not started yet')
+                return
+            filepath = self.create_clip_filename()
+            self.camera.split_video_capture(filepath)
+            next_clip = VideoClip(filepath, duration=self.MOTION_DURATION)
+            logging.info(f'Split clip: {os.path.basename(self.current_video_clip.filename)}')
+            self.current_video_clip.finish()
+            max_fps = int(1000000 / self.camera.picamera.exposure_speed)
+            logging.info(f'exposure_speed: {self.camera.picamera.exposure_speed} : {max_fps}')
+
+            self.current_video_clip.framerate = min(max_fps, self.camera.picamera.framerate) if max_fps > 0 else None
+            logging.info(f'  End split clip: {os.path.basename(self.current_video_clip.filename)} framerate: {self.current_video_clip.framerate}')
+            self.on_clip_complete()
+            self.current_video_clip = next_clip
+
 
     def end_video_clip(self):
         if self.video_enabled:
@@ -342,10 +364,7 @@ class CameraProducer(ImageProducer):
                     logging.info(f'time to end clip passed: {self.current_video_clip.end_time}')
                 else:
                     logging.debug(f'time to end clip passed: {self.current_video_clip.end_time}')
-                self.end_video_clip()
-                self.start_video_clip()
-
-
+                self.split_video_clip()
 
     def calculate_camera_settings_from_time(self):
         p0, p1, pct = self.suntimes.get_part_of_day_percent()

@@ -106,9 +106,13 @@ class Camera():
         self._model = rev
         return self._model
 
+    def split_video_capture(self, filename):
+        self.picamera.split_recording(filename, format=None, splitter_port=1,sps_timing=True)
+        logging.debug(f'Started video recording: {filename}')
+
     def start_video_capture(self, filename):
         self.picamera.start_recording(filename, format=None, splitter_port=1,sps_timing=True)
-        logging.debug(f'Started recording video: {filename}')
+        logging.debug(f'Split video recording: {filename}')
 
     def stop_video_capture(self):
         self.picamera.stop_recording(splitter_port=1)
