@@ -84,8 +84,8 @@ class MotionVideoProcessor(ImageConsumer):
         video_out = cv2.VideoWriter()
         success = video_out.open(new_path, fourcc, fps, capSize)
         if not success:
-            raise Exception(f'Failed to open file for converted video: {new_path}')
-
+            logging.error(f'Failed to open file for converted video: {new_path}')
+            return
         frame_count = 0
 
         while True:
@@ -129,8 +129,9 @@ class MotionVideoProcessor(ImageConsumer):
             self.deleted_clips += 1
         elif self.outdir != self.video_temp:
             clip_path = self.convert_video(clip) # This needs to happen even when temp and out dirs are the same
-            logging.info(f'Saving {os.path.basename(clip_path)}')
-            out_path = os.path.join(self.video_dir, os.path.basename(clip_path))
-            logging.info(f'Moving {clip_path} to {out_path}')
-            os.rename(clip_path, out_path)
+            if clip_path is not None:
+                logging.info(f'Saving {os.path.basename(clip_path)}')
+                out_path = os.path.join(self.video_dir, os.path.basename(clip_path))
+                logging.info(f'Moving {clip_path} to {out_path}')
+                os.rename(clip_path, out_path)
 

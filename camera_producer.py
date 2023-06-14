@@ -250,6 +250,8 @@ class CameraProducer(ImageProducer):
             self.shutdown_event.wait(2)
 
     def calculate_camera_settings(self):
+        if self.config.video:
+            return 0, 0
         # zero means "let the camera decide" for both iso and shutter_speed
         iso = 0
         shutter_speed = 0
@@ -315,8 +317,10 @@ class CameraProducer(ImageProducer):
                 return
             self.camera.stop_video_capture()
             self.current_video_clip.finish()
-            max_fps = int(1 / self.camera.picamera.shutter_speed)
-            self.current_video_clip.framerate = min(max_fps, self.camera.picamera.framerate)
+            max_fps = int(1000000 / self.camera.picamera.exposure_speed)
+            logging.info(f'exposure_speed: {self.camera.picamera.exposure_speed} : {max_fps}')
+
+            self.current_video_clip.framerate = min(max_fps, self.camera.picamera.framerate) if max_fps > 0 else None
             logging.info(f'  End clip: {os.path.basename(self.current_video_clip.filename)} framerate: {self.current_video_clip.framerate}')
             self.on_clip_complete()
 

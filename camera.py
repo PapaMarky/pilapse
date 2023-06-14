@@ -36,10 +36,14 @@ class Camera():
         framerate = 30 if video else 0
         logging.info(f'Video mode: {video}')
         logging.info(f'framerate_range: {framerate_range}')
+
         self.camera = PiCamera(sensor_mode=self._sensor_mode,
                                framerate_range=framerate_range,
                                framerate=framerate,
                                resolution=(width,height))
+        if video:
+            self.camera.shutter_speed = 0
+
         modes = []
         for m in PiCamera.EXPOSURE_MODES:
             modes.append(m)
@@ -103,7 +107,7 @@ class Camera():
         return self._model
 
     def start_video_capture(self, filename):
-        self.picamera.start_recording(filename, format=None, splitter_port=1)
+        self.picamera.start_recording(filename, format=None, splitter_port=1,sps_timing=True)
         logging.debug(f'Started recording video: {filename}')
 
     def stop_video_capture(self):
