@@ -98,6 +98,8 @@ class CameraProducer(ImageProducer):
         threads.ImageProducer.add_arguments_to_parser(parser)
 
         camera = parser.add_argument_group(argument_group_name, 'Parameters related to the camera')
+        camera.add_argument('--rotate', type=int, default=180,
+                            help='Rotate the image (degrees)')
         camera.add_argument('--zoom', type=float, help='Zoom factor. Must be greater than 1.0', default=1.0)
         camera.add_argument('--framerate', type=float, default=None,
                            help='Framerate of the camera. '
@@ -218,7 +220,9 @@ class CameraProducer(ImageProducer):
                                     awb_mode=self.config.awb_mode,
                                     aspect_ratio=self.ar,
                                     iso=self.config.iso,
-                                    video=self.config.video)
+                                    video=self.config.video,
+                                    rotation=self.config.rotate,
+                                    nightsky=self.config.nightsky)
 
         self.light_meter = LightMeter()
         logging.info(f'Light meter available: {self.light_meter.available}')
@@ -232,6 +236,7 @@ class CameraProducer(ImageProducer):
             iso, shutter_speed = self.calculate_camera_settings()
             logging.info(f'Before setting ISO to {iso}: analog gain: {self.camera.picamera.analog_gain}, '
                          f'digital gain: {self.camera.picamera.digital_gain}')
+            logging.info(f'shutter speed: {shutter_speed}')
             self.camera.picamera.iso = iso
             self.camera.picamera.shutter_speed = shutter_speed
 
@@ -252,6 +257,14 @@ class CameraProducer(ImageProducer):
     def calculate_camera_settings(self):
         if self.config.video:
             return 0, 0
+        if self.config.nightsky:
+            if self.camera.model == 'V1':
+                iso = 100 if self.config.iso is None else self.config.iso
+                shutter_speed = 6000000
+            else:
+                iso = 60 if self.config.iso is None else self.config.iso
+                shutter_speed = 1000000
+            return iso, shutter_speed
         # zero means "let the camera decide" for both iso and shutter_speed
         iso = 0
         shutter_speed = 0

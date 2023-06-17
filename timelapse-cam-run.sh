@@ -57,6 +57,11 @@ if [[ ! -z $AUTO_CAM ]]; then
   "
 fi
 
+if [[ ! -z $NIGHTSKY ]]; then
+  CMD="$CMD --nightsky \
+  "
+fi
+
 if [[ ! -z $ISO ]]; then
   CMD="$CMD --iso $ISO \
   "
@@ -74,6 +79,10 @@ fi
 
 if [[ ! -z $LOGLEVEL ]]; then
   CMD="$CMD --loglevel $LOGLEVEL "
+fi
+
+if [[ ! -z $ROTATE ]]; then
+    CMD="$CMD --rotate $ROTATE "
 fi
 
 echo "CMD: $CMD"

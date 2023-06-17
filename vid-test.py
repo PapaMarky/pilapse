@@ -12,7 +12,7 @@ print(f'creating: {testfile}')
 camera = PiCamera(sensor_mode=5,
                   # framerate_range=(1/10, 40),
                   resolution=(640,480))
-camera.start_recording(testfile, format=None)
+camera.start_recording(testfile, format=None,sps_timing=True)
 
 time.sleep(3)
 camera.stop_recording()
@@ -28,12 +28,15 @@ fourcc = cv2.VideoWriter_fourcc('m', 'p', '4', 'v') # note the lower case
 video = cv2.VideoWriter()
 success = video.open(outfile,fourcc,fps,capSize)
 
+print(f'Expecting {frame_count} frames')
 n = 1
 while True:
     # `success` is a boolean and `frame` contains the next video frame
     print(f'show frame {n}...')
     n += 1
     success, frame = video_cap.read()
+    pos = video_cap.get(cv2.CAP_PROP_POS_FRAMES)
+    print(f'p: {pos}')
     if not success:
         print(f'Success not true')
         break

@@ -76,7 +76,7 @@ class MotionDetectionApp(Configurable):
         motion.add_argument('--video-dir', type=str,
                             help='Directory where processed video clips will be stored. Defaults to same location '
                                  'as where still images are stored')
-
+        motion.add_argument('--nightsky', help=argparse.SUPPRESS, default=False)
 
         MotionDetectionApp.ARGS_ADDED = True
         # Add the args of Configurables that MotionDetectionApp uses

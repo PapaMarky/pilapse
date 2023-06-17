@@ -76,6 +76,10 @@ class TimelapseApp(Configurable):
     @classmethod
     def add_arguments_to_parser(cls, parser:argparse.ArgumentParser, argument_group_name:str='Motion Settings')->argparse.ArgumentParser:
         logging.debug(f'Adding motion detection args to parser (ADDED:{TimelapseApp.ARGS_ADDED})')
+        # hide this
+        parser.add_argument('--video', help=argparse.SUPPRESS, default=False)
+        parser.add_argument('--nightsky', action='store_true',
+                            help='Force long exposure time for night sky timelapse')
         Schedule.add_arguments_to_parser(parser)
         CameraProducer.add_arguments_to_parser(parser)
         ImageWriter.add_arguments_to_parser(parser)

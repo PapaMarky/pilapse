@@ -18,7 +18,8 @@ class Camera():
                  awb_mode='auto',
                  meter_mode='average',
                  iso=0,
-                 video=False):
+                 video=False,
+                 nightsky=False):
         self._model = None
         self._sensor_mode = None
         self._use_video_port = True
@@ -29,20 +30,62 @@ class Camera():
             self._sensor_mode = 5
         else:
             raise Exception(f'Aspect Ratio should be 4:3 or 16:9. Got {aspect_ratio}')
-
         # setting framerate_range throws an exception when start_recording is called:
         # picamera.exc.PiCameraValueError: framerate_delta cannot be used with framerate_range
         framerate_range = None if video else (1/10, 40)
-        framerate = 30 if video else 0
         logging.info(f'Video mode: {video}')
         logging.info(f'framerate_range: {framerate_range}')
+        self.camera = PiCamera()
+        camera_model = self.model
+        self.camera.close()
 
-        self.camera = PiCamera(sensor_mode=self._sensor_mode,
-                               framerate_range=framerate_range,
-                               framerate=framerate,
-                               resolution=(width,height))
         if video:
+            framerate = 30
+            self.camera = PiCamera(sensor_mode=self._sensor_mode,
+                                   framerate_range=framerate_range,
+                                   framerate=framerate,
+                                   resolution=(width,height))
             self.camera.shutter_speed = 0
+
+
+            try:
+                self.camera.led = False
+            except:
+                logging.info('Failed to turn off LED. Oh well.')
+
+        else:
+            framerate = 0
+            if nightsky:
+                if camera_model == 'V1':
+                    framerate = 1/6
+                    self._sensor_mode = 3
+                else:
+                    framerate = 1/10
+
+                self.camera = PiCamera(sensor_mode=self._sensor_mode,
+                                       framerate_range=framerate_range,
+                                       resolution=(width,height))
+            else:
+                self.camera = PiCamera(sensor_mode=self._sensor_mode,
+                                       framerate=framerate,
+                                       resolution=(width,height))
+
+            try:
+                self.camera.led = False
+            except:
+                logging.info('Failed to turn off LED. Oh well.')
+
+            if nightsky:
+                logging.info(f'Setting up for night sky timelapse')
+                if camera_model == 'V1':
+                    self.camera.shutter_speed = 6000000
+                else:
+                    self.camera.shutter_speed = 10000000
+                self.camera.iso = iso
+                time.sleep(30)
+                self.camera.exposure_mode = 'off'
+                logging.info(f' - night sky set up complete')
+
 
         modes = []
         for m in PiCamera.EXPOSURE_MODES:
@@ -67,11 +110,6 @@ class Camera():
         self.camera.awb_mode = awb_mode
         self.camera.meter_mode = meter_mode
         self.camera.iso = iso
-
-        try:
-            self.camera.led = False
-        except:
-            logging.info('Failed to turn off LED. Oh well.')
 
         logging.info(f'Camera {self.model}')
         logging.info(f' -   resolution: {width} x {height}')
