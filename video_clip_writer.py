@@ -94,8 +94,6 @@ class MotionVideoProcessor(ImageConsumer):
                 # assume we hit the end of the video clip we are converting
                 file_number += 1
                 if file_number < len(clip._filelist):
-                    if frame_count % 10 == 0:
-                        self.log_status()
                     os.remove(filename)
                     video_in.release()
                     video_in = None
@@ -109,6 +107,8 @@ class MotionVideoProcessor(ImageConsumer):
                 else:
                     break
             frame_count += 1
+            if frame_count % 10 == 0:
+                self.log_status()
             video_out.write(frame)
 
         os.remove(filename)
