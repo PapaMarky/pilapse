@@ -79,6 +79,10 @@ if [[ ! -z $VIDEO ]]; then
   CMD="$CMD --video "
 fi
 
+if [[ ! -z $ROTATE ]]; then
+  CMD="$CMD --rotate $ROTATE "
+fi
+
 echo "CMD: $CMD"
 
 $CMD

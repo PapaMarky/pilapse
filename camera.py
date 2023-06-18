@@ -38,7 +38,8 @@ class Camera():
         self.camera = PiCamera()
         camera_model = self.model
         self.camera.close()
-
+        if camera_model == 'HQ':
+            self._sensor_mode = 2
         if video:
             framerate = 30
             self.camera = PiCamera(sensor_mode=self._sensor_mode,
@@ -59,8 +60,10 @@ class Camera():
                 if camera_model == 'V1':
                     framerate = 1/6
                     self._sensor_mode = 3
-                else:
+                elif camera_model == 'V2':
                     framerate = 1/10
+                elif camera_model == 'HQ':
+                    framerate = 1/12
 
                 self.camera = PiCamera(sensor_mode=self._sensor_mode,
                                        framerate_range=framerate_range,
@@ -85,6 +88,9 @@ class Camera():
                 time.sleep(30)
                 self.camera.exposure_mode = 'off'
                 logging.info(f' - night sky set up complete')
+                logging.info(f'   - shutter_speed: {self.camera.shutter_speed}')
+                logging.info(f'   - iso: {self.camera.iso}')
+                logging.info(f'   - exposure mode: {self.camera.exposure_mode}')
 
 
         modes = []
@@ -116,6 +122,7 @@ class Camera():
         logging.info(f' - aspect ratio: {aspect_ratio}')
         logging.info(f' -         zoom: {zoom}')
         logging.info(f' -     rotation: {rotation}')
+        logging.info(f' -  sensor mode: {self._sensor_mode}')
         logging.info(f'setup_camera completed: Camera Resolution: {self.camera.MAX_RESOLUTION}')
         logging.info(f' Model: {self.model}, Zoom: {self.zoom_str()}')
 
@@ -135,7 +142,8 @@ class Camera():
         rev = self.camera.revision
         known = {
             'ov5647': 'V1',
-            'imx219': 'V2'
+            'imx219': 'V2',
+            'imx477': 'HQ'
         }
         if rev in known:
             rev = known[rev]

@@ -10,7 +10,7 @@ ssh-copy-id -i ~/.ssh/id_rpi.pub pi@picam002.local
 
 # Pi SW setup
 
-* if using v1 camera setup legacy camera stack (requires reboot)
+* setup legacy camera stack (requires reboot)
 sudo raspi-config
 
 sudo apt update
