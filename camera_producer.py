@@ -129,9 +129,6 @@ class CameraProducer(ImageProducer):
                             help='Automatically update the camera shutter speed / iso based on time of day and / or '
                                  'light meter readings (if available)')
 
-        camera.add_argument('--location', type=str,
-                            help='latitude and longitude to use for getting the sunset/sunrise etc times. Two comma '
-                                 'separated values')
         parser.add_argument('--suntime-settings', type=str,
                             help='path to json file with camera settings for each "suntime". '
                                  'Used as keyframes to calculate current values')
@@ -213,6 +210,7 @@ class CameraProducer(ImageProducer):
 
     def create_camera(self):
         logging.info(f'Video Mode: {self.config.video}')
+        logging.info(f'Rotation: {self.config.rotate}')
         self.camera:Camera = Camera(self.width, self.height,
                                     zoom=self.config.zoom,
                                     exposure_mode=self.config.exposure_mode,
@@ -442,7 +440,7 @@ class CameraProducer(ImageProducer):
 
     def check_stop_at(self):
         if self.schedule.stopped:
-            logging.info(f'Shutting down due to "stop_at": {self.config.stop_at.strftime("%Y/%m/%d %H:%M:%S")}')
+            logging.info(f'Shutting down due to "stop_at": {self.config.stop_at}')
             self.shutdown_event.set()
             return False
         return True
@@ -459,7 +457,7 @@ class CameraProducer(ImageProducer):
                         return
                     if not self.current_video_clip.add_motion_detection(command['timestamp']):
                         logging.warning(f'Motion event outside current: {command["timestamp"].strftime("%Y%m%d_%H%M%S.%f")}')
-                        if not self.previous_video_clip.add_motion_detection(command['timestamp']):
+                        if self.previous_video_clip is not None and not self.previous_video_clip.add_motion_detection(command['timestamp']):
                             logging.error(f'Motion event outside previous: {command["timestamp"].strftime("%Y%m%d_%H%M%S.%f")}')
             else:
                 self.shutdown_event.wait(0.001)

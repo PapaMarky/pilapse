@@ -31,7 +31,7 @@ from pause_until import pause_until
 from scheduling import Schedule
 from suntime import Suntime
 
-location=(37.255329186920946, -121.94417304596949)
+location=(37.335480, -121.893028)
 
 def get_program_name():
     name = os.path.basename(sys.argv[0])

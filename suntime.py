@@ -4,7 +4,7 @@ from datetime import date
 import requests
 
 def parse_time(time_str, day:datetime):
-    # logging.info(f'parse time: {time_str}')
+    logging.info(f'parse time: {time_str}')
     time = datetime.strptime(time_str, '%I:%M:%S %p').time()
     rval = datetime(day.year, day.month, day.day, time.hour, time.minute, time.second)
     return rval
@@ -21,13 +21,36 @@ Sunset is the time when the last part of the Sun disappears below the horizon in
 Twilight refers to the period between the dawn and sunrise and between sunset and dusk.
 '''
 
+
+class BadLocationString(Exception):
+    def __init__(self):
+        super().__init__("Bad Location String (must be 2 floats separated by comma, no spaces")
+
+class BadTimeString(Exception):
+    def __init__(self, timestring):
+        super().__init__(f"Bad suntime value: {timestring}. See Suntime.valid_times()")
+
 class Suntime:
-    def __init__(self, location:tuple):
-        self.data = self.get_sunrise_info(location)
+    def __init__(self, location, date='today'):
+        self.location = None
+        if isinstance(location, str):
+            if not ',' in location:
+                raise BadLocationString
+            l = location.split(',')
+            self.location = (float(l[0]), float(l[1]))
+        else:
+            self.location = location
+        self.date = date
+        self.data = self.get_sunrise_info()
 
     def _get_value(self, valuename):
         if self.data is not None and valuename in self.data:
             return self.data[valuename]
+
+    @classmethod
+    def valid_times(cls):
+        return ('first_light', 'dawn', 'sunrise', 'solar_noon', 'golden_hour', 'sunset', 'dusk', 'last_light')
+
     @property
     def first_light(self):
         return self._get_value('first_light')
@@ -68,6 +91,24 @@ class Suntime:
     @property
     def timezone(self):
         return self._get_value('timezone')
+    def value_from_name(self, name):
+        if name not in self.valid_times():
+            return None
+        function_map = {
+            'first-light': self.first_light,
+            'first_light': self.first_light,
+            'dawn': self.dawn,
+            'sunrise': self.sunrise,
+            'solar-noon': self.solar_noon,
+            'solar_noon': self.solar_noon,
+            'golden-hour': self.golden_hour,
+            'golden_hour': self.golden_hour,
+            'sunset': self.sunset,
+            'dusk': self.dusk,
+            'last-light': self.last_light,
+            'last_light': self.last_light,
+        }
+        return function_map[name]
 
     def map_time(self, t, start, end):
         total = end - start
@@ -139,12 +180,14 @@ class Suntime:
         p = self.map_time(now, self.last_light, self.t_first_light)
         return ('last_light', 't_first_light', p)
 
-    def get_sunrise_info(self, location:tuple) -> dict:
-        latitude, longitude = location
-        url = f'https://api.sunrisesunset.io/json?lat={latitude}&lng={longitude}'
+    def get_sunrise_info(self) -> dict:
+        latitude, longitude = self.location
+        url = f'https://api.sunrisesunset.io/json?lat={latitude}&lng={longitude}&date={self.date}'
+        logging.debug(f'suntime url: {url}')
         response = requests.get(url)
         if response.ok:
             data = response.json()
+            logging.info(f'data: {data}')
             if 'results' in data:
                 d = data['results']
                 d['today'] = date.today()

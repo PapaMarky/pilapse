@@ -17,6 +17,10 @@ if [[ ! -z $RUN_UNTIL ]]; then
   CMD="$CMD --run-until $RUN_UNTIL "
 fi
 
+if [[ ! -z $STOP_AT ]]; then
+  CMD="$CMD --stop-at $STOP_AT"
+fi
+
 if [[ ! -z $METER_MODE ]]; then
   CMD="$CMD --meter-mode $METER_MODE "
 fi

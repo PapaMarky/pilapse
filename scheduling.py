@@ -1,9 +1,10 @@
 import argparse
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 from datetime import time
 
 from config import Configurable
+from suntime import Suntime, BadTimeString
 
 
 class Schedule(Configurable):
@@ -20,20 +21,34 @@ class Schedule(Configurable):
 
         scheduling = parser.add_argument_group(argument_group_name, 'Control when to run and when to stop')
         scheduling.add_argument('--stop-at', type=str, default=None,
-                            help='Stop running (exit) when time reaches "stop-at". '
-                                 'Format: HH:MM:SS with HH in 24 hour format')
+                            help='Stop running (exit) the next time the time reaches "stop-at". '
+                                 'Format: HH:MM:SS with HH in 24 hour format or a suntime. (see Suntime.valid_times()')
         scheduling.add_argument('--run-from', type=str, default=None,
                             help='Only run after this time of day. (Format: HH:MM:SS with HH in 24 hour format) '
                                  'Pause (don not exit) if before this time')
         scheduling.add_argument('--run-until', type=str, default=None,
                             help='Only run until this time of day. (Format: HH:MM:SS with HH in 24 hour format)'
                                  'Pause (don not exit) if after this time')
+        scheduling.add_argument('--location', type=str, default=None,
+                                help='Location to use for looking up values like "sunrise"')
         Schedule.ARGS_ADDED = True
         return parser
 
     def __init__(self, config:argparse.Namespace):
         self._stopped:bool = False
         self._paused:bool = False if config.run_from is None else True
+
+        self._suntimes = None
+        self._location = config.location
+
+        def value_to_time(value):
+            if not ':' in value:
+                value = self.suntimes.value_from_name(value)
+                if value is None:
+                    raise BadTimeString(value)
+                return value
+            (hour, minute, second) = config.stop_at.split(':')
+            return datetime.now().replace(hour=int(hour), minute=int(minute), second=int(second), microsecond=0)
 
         # validate config
         if config.stop_at is not None and (config.run_from is not None or config.run_until is not None):
@@ -46,12 +61,13 @@ class Schedule(Configurable):
                 error_message = 'if either run-from or run-until are set, both must be set'
                 raise Exception(error_message)
 
-
         self.stop_at:datetime = None
         if config.stop_at is not None:
-            logging.debug(f'Setting stop-at: {self.stop_at}')
-            (hour, minute, second) = config.stop_at.split(':')
-            self.stop_at = datetime.now().replace(hour=int(hour), minute=int(minute), second=int(second), microsecond=0)
+            logging.debug(f'Setting stop-at: {config.stop_at}')
+            self.stop_at = value_to_time(config.stop_at)
+            if datetime.now() > self.stop_at:
+                self.stop_at += timedelta(days=1)
+            logging.debug(f'stop at : {self.stop_at}')
 
         self.run_from:time = None
         if config.run_from is not None:
@@ -74,12 +90,24 @@ class Schedule(Configurable):
             logging.info(f' - run-until is {self.run_until}')
 
     @property
+    def suntimes(self):
+        if self._suntimes is None:
+            self._suntimes = Suntime(self.location)
+        return self._suntimes
+
+    @property
     def paused(self):
         return self._paused
 
     @property
     def stopped(self):
         return self._stopped
+
+    def get_suntime(self, suntime):
+        if str not in self.suntimes.valid_times():
+            logging.error(f'bad suntime value: {suntime}')
+            return None
+        return self.suntimes.value_from_name(suntime)
 
     def update(self):
         """
