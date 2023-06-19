@@ -1,0 +1,12 @@
+def BGR(r, g, b):
+    return (b, g, r)
+
+BLUE = BGR(0, 0, 255)
+GREEN = BGR(0, 255, 0)
+RED = BGR(255, 0, 0)
+CYAN = BGR(0, 255, 255)
+MAGENTA = BGR(255, 0, 255)
+YELLOW = BGR(255, 255, 0)
+ORANGE = BGR(255,165,0)
+WHITE = BGR(255, 255, 255)
+BLACK = BGR(0, 0, 0)
