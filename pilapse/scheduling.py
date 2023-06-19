@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 from datetime import time
 
 from pilapse.config import Configurable
-from suntime import Suntime, BadTimeString
+from pilapse.suntime import Suntime, BadTimeString
 
 
 class Schedule(Configurable):

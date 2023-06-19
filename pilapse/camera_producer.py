@@ -10,7 +10,6 @@ import threading
 from pilapse.system_resources import SystemResources
 
 import pilapse
-import threads
 from pilapse.camera import Camera
 from pilapse.pause_until import pause_until
 from pilapse.colors import BGR
@@ -95,7 +94,7 @@ class CameraProducer(ImageProducer):
         if cls.ARGS_ADDED:
             return parser
         # CameraProducer is an ImageProducer. Call the base class
-        threads.ImageProducer.add_arguments_to_parser(parser)
+        ImageProducer.add_arguments_to_parser(parser)
 
         camera = parser.add_argument_group(argument_group_name, 'Parameters related to the camera')
         camera.add_argument('--rotate', type=int, default=180,
