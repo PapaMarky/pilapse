@@ -2,7 +2,7 @@ import logging
 import os
 import unittest
 
-from config import Config
+from pilapse.config import Config
 from timelapse import TimelapseConfig
 from motion import MotionConfig
 

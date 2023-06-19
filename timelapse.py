@@ -5,9 +5,9 @@ import threading
 from datetime import datetime, timedelta
 from queue import Queue
 
-from camera import Camera
+from pilapse.camera import Camera
 
-from config import Config, Configurable
+from pilapse.config import Config, Configurable
 import pilapse as pl
 
 import cv2
@@ -17,9 +17,9 @@ import sys
 import time
 import pause
 
-from scheduling import Schedule
-from threads import ImageWriter
-from camera_producer import CameraProducer
+from pilapse.scheduling import Schedule
+from pilapse.threads import ImageWriter
+from pilapse.camera_producer import CameraProducer
 
 
 def BGR(r, g, b):
@@ -75,11 +75,14 @@ class TimelapseApp(Configurable):
     ARGS_ADDED = False
     @classmethod
     def add_arguments_to_parser(cls, parser:argparse.ArgumentParser, argument_group_name:str='Motion Settings')->argparse.ArgumentParser:
-        logging.debug(f'Adding motion detection args to parser (ADDED:{TimelapseApp.ARGS_ADDED})')
+        logging.info(f'Adding {cls.__name__} args to parser (ADDED:{cls.ARGS_ADDED})')
+        if cls.ARGS_ADDED:
+            return parser
         # hide this
         parser.add_argument('--video', help=argparse.SUPPRESS, default=False)
         parser.add_argument('--nightsky', action='store_true',
                             help='Force long exposure time for night sky timelapse')
+        cls.ARGS_ADDED = True
         Schedule.add_arguments_to_parser(parser)
         CameraProducer.add_arguments_to_parser(parser)
         ImageWriter.add_arguments_to_parser(parser)

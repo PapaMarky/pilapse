@@ -27,9 +27,9 @@ import time
 from fractions import Fraction
 import datetime
 
-from pause_until import pause_until
-from scheduling import Schedule
-from suntime import Suntime
+from pilapse.pause_until import pause_until
+from pilapse.scheduling import Schedule
+from pilapse.suntime import Suntime
 
 location=(37.335480, -121.893028)
 

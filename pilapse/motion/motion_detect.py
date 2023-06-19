@@ -5,7 +5,7 @@ import cv2
 import imutils
 
 from pilapse import colors
-from threads import FileImage, Image
+from pilapse.threads import FileImage, Image
 
 
 class MotionData:

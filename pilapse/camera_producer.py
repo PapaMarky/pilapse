@@ -7,18 +7,18 @@ import re
 import subprocess
 import threading
 
-from system_resources import SystemResources
+from pilapse.system_resources import SystemResources
 
 import pilapse
 import threads
-from camera import Camera
-from pause_until import pause_until
+from pilapse.camera import Camera
+from pilapse.pause_until import pause_until
 from pilapse.colors import BGR
-from threads import ImageProducer, CameraImage
-from scheduling import Schedule
-from light_meter import LightMeter
-from suntime import Suntime
-from video_clip import VideoClip
+from pilapse.threads import ImageProducer, CameraImage
+from pilapse.scheduling import Schedule
+from pilapse.light_meter import LightMeter
+from pilapse.suntime import Suntime
+from pilapse.video_clip import VideoClip
 
 from datetime import datetime, timedelta
 
@@ -91,8 +91,8 @@ class CameraProducer(ImageProducer):
     def add_arguments_to_parser(cls,
                                 parser:argparse.ArgumentParser,
                                 argument_group_name:str= 'Camera Settings')->argparse.ArgumentParser:
-        logging.debug(f'Adding CameraProducer({cls}) args (ADDED: {CameraProducer.ARGS_ADDED})')
-        if CameraProducer.ARGS_ADDED:
+        logging.info(f'Adding {cls.__name__} args to parser (ADDED:{cls.ARGS_ADDED})')
+        if cls.ARGS_ADDED:
             return parser
         # CameraProducer is an ImageProducer. Call the base class
         threads.ImageProducer.add_arguments_to_parser(parser)
@@ -133,7 +133,7 @@ class CameraProducer(ImageProducer):
                             help='path to json file with camera settings for each "suntime". '
                                  'Used as keyframes to calculate current values')
 
-        CameraProducer.ARGS_ADDED = True
+        cls.ARGS_ADDED = True
         # CameraProducer owns a Schedule instance
         Schedule.add_arguments_to_parser(parser, 'Scheduling')
         return parser

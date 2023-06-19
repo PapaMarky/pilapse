@@ -2,18 +2,17 @@
 
 import argparse
 import threading
-from camera_producer import CameraProducer
+from pilapse.camera_producer import CameraProducer
 
-from config import Config
-from config import Configurable
+from pilapse.config import Configurable
 import pilapse as pl
 from queue import Queue
-from threads import DirectoryProducer, MotionPipeline, ImageWriter
+from pilapse.threads import DirectoryProducer, MotionPipeline, ImageWriter
 
 import logging
 import time
 
-from video_clip_writer import MotionVideoProcessor
+from pilapse.video_clip_writer import MotionVideoProcessor
 
 
 def BGR(r, g, b):
@@ -33,7 +32,10 @@ class MotionDetectionApp(Configurable):
     ARGS_ADDED = False
     @classmethod
     def add_arguments_to_parser(cls, parser:argparse.ArgumentParser, argument_group_name:str='Motion Settings')->argparse.ArgumentParser:
-        logging.debug(f'Adding motion detection args to parser (ADDED:{MotionDetectionApp.ARGS_ADDED})')
+        logging.info(f'Adding {cls.__name__} args to parser (ADDED:{cls.ARGS_ADDED})')
+        if cls.ARGS_ADDED:
+            return parser
+
         motion = parser.add_argument_group(argument_group_name, 'Parameters related to motion detection')
         motion.add_argument('--mindiff', '-m', type=int, help='Minimum size of "moving object" to detect', default=75)
         motion.add_argument('--top', '-t', type=float, help='top of region of interest. (0.0 - 1.0) '
@@ -78,7 +80,7 @@ class MotionDetectionApp(Configurable):
                                  'as where still images are stored')
         motion.add_argument('--nightsky', help=argparse.SUPPRESS, default=False)
 
-        MotionDetectionApp.ARGS_ADDED = True
+        cls.ARGS_ADDED = True
         # Add the args of Configurables that MotionDetectionApp uses
         CameraProducer.add_arguments_to_parser(parser)
         DirectoryProducer.add_arguments_to_parser(parser)

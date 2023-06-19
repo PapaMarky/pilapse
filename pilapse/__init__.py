@@ -5,9 +5,31 @@ import sys
 import time
 
 import cv2
+import psutil
 
 import pilapse.motion
 import pilapse.colors
+
+def get_program_name():
+    name = os.path.basename(sys.argv[0])
+    s = name.split('.')
+    if s[-1] == 'py':
+        name = '.'.join(s[:-1])
+    return name
+
+
+logfile = os.environ.get('LOGFILE')
+if not logfile:
+    logfile = f'{get_program_name()}.log'
+if logfile == 'stdout':
+    logfile = None
+
+print(f'Logging to {logfile}')
+logging.basicConfig(
+    filename=logfile,
+    level=logging.INFO,
+    format='%(asctime)s|%(levelname)s|%(threadName)s|%(message)s'
+)
 
 # TODO Incorporate all of this "time to die" stuff into App class so it can have access to the shutdown event
 time_to_die = False
@@ -26,13 +48,6 @@ def exit_gracefully(signum, frame):
 
 signal.signal(signal.SIGINT, exit_gracefully)
 signal.signal(signal.SIGTERM, exit_gracefully)
-
-def get_program_name():
-    name = os.path.basename(sys.argv[0])
-    s = name.split('.')
-    if s[-1] == 'py':
-        name = '.'.join(s[:-1])
-    return name
 
 def get_pid_file():
     return f'{get_program_name()}.pid'
@@ -79,13 +94,6 @@ def die(status=0):
     time.sleep(0.1) # do not want this sleep to be interruptible
     sys.exit(status)
 
-logfile = os.environ.get('LOGFILE')
-if not logfile:
-    logfile = f'{get_program_name()}.log'
-if logfile == 'stdout':
-    logfile = None
-
-print(f'Logging to {logfile}')
 
 def annotate_frame(image, annotation, config, position='ul', text_size:float = 1.0):
     if annotation:

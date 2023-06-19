@@ -22,20 +22,9 @@ import pilapse
 import pilapse as pl
 
 
-from config import Configurable
-from system_resources import SystemResources
-
-def BGR(r, g, b):
-    return (b, g, r)
-
-BLUE = BGR(0, 0, 255)
-GREEN = BGR(0, 255, 0)
-RED = BGR(255, 0, 0)
-CYAN = BGR(0, 255, 255)
-MAGENTA = BGR(255, 0, 255)
-YELLOW = BGR(255, 255, 0)
-ORANGE = BGR(255,165,0)
-WHITE = BGR(255, 255, 255)
+from pilapse.config import Configurable
+from pilapse.system_resources import SystemResources
+from pilapse import colors
 
 GIG = 1024 * 1024 * 1024
 class Image():
@@ -207,8 +196,8 @@ class ImageProducer(PilapseThread, Configurable):
     ARGS_ADDED = False
     @classmethod
     def add_arguments_to_parser(cls, parser:argparse.ArgumentParser, argument_group_name:str='Images')->argparse.ArgumentParser:
-        logging.debug(f'ImageProducer({cls}) add_arguments: ADDED: {ImageProducer.ARGS_ADDED}')
-        if ImageProducer.ARGS_ADDED:
+        logging.info(f'Adding {cls.__name__} args to parser (ADDED:{cls.ARGS_ADDED})')
+        if cls.ARGS_ADDED:
             return parser
         Configurable.add_arguments_to_parser(parser)
         images = parser.add_argument_group(argument_group_name, 'Parameters related to creating images')
@@ -216,7 +205,7 @@ class ImageProducer(PilapseThread, Configurable):
         images.add_argument('--height', '-H', type=int, help='height of each image', default=480)
         images.add_argument('--nframes', type=int,
                              help='Stop after creating this many images. (useful for testing setup)')
-        ImageProducer.ARGS_ADDED = True
+        cls.ARGS_ADDED = True
         return parser
 
     THROTTLE_DELAY = 0.1
@@ -293,19 +282,19 @@ class ImageProducer(PilapseThread, Configurable):
     def produce_image(self) -> str:
         raise Exception('Base class cannot produce images')
 
-class DirectoryProducer(ImageProducer):
+class DirectoryProducer(ImageProducer, Configurable):
     ARGS_ADDED = False
     @classmethod
     def add_arguments_to_parser(cls, parser:argparse.ArgumentParser, argument_group_name:str='Image Input')->argparse.ArgumentParser:
-        logging.debug(f'DirectoryProducer({cls}) add_arguments: ADDED: {DirectoryProducer.ARGS_ADDED}')
-        if DirectoryProducer.ARGS_ADDED:
+        logging.info(f'Adding {cls.__name__} args to parser (ADDED:{cls.ARGS_ADDED})')
+        if cls.ARGS_ADDED:
             return parser
-        ImageProducer.add_arguments_to_parser(parser)
         directory = parser.add_argument_group(argument_group_name, 'Parameters related to loading image files')
 
         directory.add_argument('--source-dir', type=str,
                            help='If source-dir is set, images will be loaded from files in a directory instead')
 
+        cls.ARGS_ADDED = True
         return parser
 
     class Handler(watchdog.events.PatternMatchingEventHandler):
@@ -384,12 +373,13 @@ class ImageConsumer(PilapseThread):
     # TODO: should base classes implement "add args to group" function?
     @classmethod
     def add_arguments_to_parser(cls, parser:argparse.ArgumentParser, argument_group_name:str='Image Output Settings')->argparse.ArgumentParser:
-        if ImageConsumer.ARGS_ADDED:
+        logging.info(f'Adding {cls.__name__} args to parser (ADDED:{cls.ARGS_ADDED})')
+        if cls.ARGS_ADDED:
             return parser
         images = parser.add_argument_group(argument_group_name, 'Parameters related to outputting images')
         ImageConsumer.add_arguments_to_group(images)
 
-        ImageConsumer.ARGS_ADDED = True
+        cls.ARGS_ADDED = True
         return parser
 
     @classmethod
@@ -506,12 +496,13 @@ class ImageWriter(ImageConsumer):
     ARGS_ADDED = False
     @classmethod
     def add_arguments_to_parser(cls, parser:argparse.ArgumentParser, argument_group_name:str='Image File Settings')->argparse.ArgumentParser:
-        if ImageWriter.ARGS_ADDED:
+        logging.info(f'Adding {cls.__name__} args to parser (ADDED:{cls.ARGS_ADDED})')
+        if cls.ARGS_ADDED:
             return parser
         images = parser.add_argument_group(argument_group_name, 'Parameters related to image files')
         super().add_arguments_to_group(images)
         ImageWriter.add_arguments_to_group(images)
-        ImageWriter.ARGS_ADDED = True
+        cls.ARGS_ADDED = True
         return parser
 
     @classmethod
@@ -528,7 +519,7 @@ class ImageWriter(ImageConsumer):
         logging.info(f'LABEL_RGB: {self.config.label_rgb}')
         if self.config.label_rgb is not None:
             (R,G,B) = self.config.label_rgb.split(',')
-            self.config.label_rgb = BGR(int(R), int(G), int(B))
+            self.config.label_rgb = colors.BGR(int(R), int(G), int(B))
             logging.info(f'FIXED label rgb: {self.config.label_rgb}')
 
     def do_work(self) -> None:
@@ -546,7 +537,7 @@ class ImageWriter(ImageConsumer):
 
     def consume_image(self, image):
         path = image.filepath
-        logging.debug(f'Input image type: {type(image)}  ({self})')
+        logging.debug(f'Input image type: {image.__class__.__name__}  ({self})')
         if self.config.show_name or self.config.show_camera_settings:
             pilapse.annotate_frame(image.image,
                                    image.timestamp_human,
@@ -618,7 +609,7 @@ class MotionPipeline(ImagePipeline):
 
         if self.config.label_rgb is not None:
             (R,G,B) = self.config.label_rgb.split(',')
-            self.config.label_rgb = BGR(int(R), int(G), int(B))
+            self.config.label_rgb = colors.BGR(int(R), int(G), int(B))
             logging.info(f'MOTION: Fixed label rgb: {self.config.label_rgb}')
 
     def preconsume(self) -> bool:
@@ -671,15 +662,15 @@ class MotionPipeline(ImagePipeline):
                     for n in range(0, 10):
                         y = int(h * n / 10)
                         x = int(w * n / 10)
-                        color = RED if y < self.config.top or y > self.config.bottom else GREEN
+                        color = colors.RED if y < self.config.top or y > self.config.bottom else colors.GREEN
                         cv2.line(copy, (0, y), (w, y), color)
-                        color = RED if x < self.config.left else GREEN
+                        color = colors.RED if x < self.config.left else colors.GREEN
                         cv2.line(copy, (x, 0), (x, h), color)
-                    cv2.line(copy, (0, self.config.top), (w, self.config.top), ORANGE)
-                    cv2.line(copy, (0, self.config.bottom), (w, self.config.bottom), ORANGE)
-                    cv2.line(copy, (self.config.left, 0), (self.config.left, h), ORANGE)
-                    cv2.line(copy, (self.config.right, 0), (self.config.right, h), ORANGE)
-                    cv2.rectangle(copy, (100, 100), (100 + self.config.mindiff, 100 + self.config.mindiff), WHITE)
+                    cv2.line(copy, (0, self.config.top), (w, self.config.top), colors.ORANGE)
+                    cv2.line(copy, (0, self.config.bottom), (w, self.config.bottom), colors.ORANGE)
+                    cv2.line(copy, (self.config.left, 0), (self.config.left, h), colors.ORANGE)
+                    cv2.line(copy, (self.config.right, 0), (self.config.right, h), colors.ORANGE)
+                    cv2.rectangle(copy, (100, 100), (100 + self.config.mindiff, 100 + self.config.mindiff), colors.WHITE)
 
                     path = os.path.join(self.outdir, new_name_motion)
                     path = path.replace('90M', '10MT')
@@ -869,7 +860,7 @@ class MotionPipeline(ImagePipeline):
         height, width, _ = new.shape
         if config.debug:
             copy = get_copy(image_in)
-            cv2.rectangle(image_in, (sLeft, sTop), (sRight, sBottom), RED)
+            cv2.rectangle(image_in, (sLeft, sTop), (sRight, sBottom), colors.RED)
         for c in cnts:
             # fit a bounding box to the contour
             (x, y, w, h) = cv2.boundingRect(c)
@@ -880,28 +871,28 @@ class MotionPipeline(ImagePipeline):
 
             if x + w > sRight:
                 if config.debug:
-                    cv2.rectangle(copy, (sx, sy), (sx + sw, sy + sh), CYAN)
+                    cv2.rectangle(copy, (sx, sy), (sx + sw, sy + sh), colors.CYAN)
                 continue
             if x < sLeft:
                 if config.debug:
-                    cv2.rectangle(copy, (sx, sy), (sx + sw, sy + sh), CYAN)
+                    cv2.rectangle(copy, (sx, sy), (sx + sw, sy + sh), colors.CYAN)
                 continue
             if y < sTop:
                 if config.debug:
-                    cv2.rectangle(copy, (sx, sy), (sx + sw, sy + sh), CYAN)
+                    cv2.rectangle(copy, (sx, sy), (sx + sw, sy + sh), colors.CYAN)
                 continue
             if y + h > sBottom:
                 if config.debug:
-                    cv2.rectangle(copy, (sx, sy), (sx + sw, sy + sh), CYAN)
+                    cv2.rectangle(copy, (sx, sy), (sx + sw, sy + sh), colors.CYAN)
                 continue
             if (w >= sMindiff or h >= sMindiff) and w < width and h < height:
                 copy = get_copy(copy)
                 if config.debug or config.show_motion:
-                    cv2.rectangle(copy, (sx, sy), (sx + sw, sy + sh), GREEN)
+                    cv2.rectangle(copy, (sx, sy), (sx + sw, sy + sh), colors.GREEN)
                 motion_detected = True
             else:
                 if config.debug:
                     copy = get_copy(copy)
-                    cv2.rectangle(copy, (sx, sy), (sx + sw, sy + sh), MAGENTA)
+                    cv2.rectangle(copy, (sx, sy), (sx + sw, sy + sh), colors.MAGENTA)
 
         return copy, motion_detected

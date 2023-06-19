@@ -5,7 +5,7 @@ import os
 import logging
 import unittest
 
-from threads import FileImage, CameraImage
+from pilapse.threads import FileImage, CameraImage
 
 THIS_DIR = os.path.dirname(os.path.abspath(__file__))
 

@@ -3,7 +3,7 @@ import logging
 from datetime import datetime, timedelta
 from datetime import time
 
-from config import Configurable
+from pilapse.config import Configurable
 from suntime import Suntime, BadTimeString
 
 
@@ -16,7 +16,8 @@ class Schedule(Configurable):
     ARGS_ADDED = False
     @classmethod
     def add_arguments_to_parser(cls, parser:argparse.ArgumentParser, argument_group_name:str='Scheduling')->argparse.ArgumentParser:
-        if Schedule.ARGS_ADDED:
+        logging.info(f'Adding {cls.__name__} args to parser (ADDED:{cls.ARGS_ADDED})')
+        if cls.ARGS_ADDED:
             return parser
 
         scheduling = parser.add_argument_group(argument_group_name, 'Control when to run and when to stop')
@@ -31,7 +32,7 @@ class Schedule(Configurable):
                                  'Pause (don not exit) if after this time')
         scheduling.add_argument('--location', type=str, default=None,
                                 help='Location to use for looking up values like "sunrise"')
-        Schedule.ARGS_ADDED = True
+        cls.ARGS_ADDED = True
         return parser
 
     def __init__(self, config:argparse.Namespace):

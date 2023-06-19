@@ -5,7 +5,7 @@ import time
 import pilapse as pl
 
 from threading import Event
-from threads import DirectoryProducer, MotionPipeline
+from pilapse.threads import DirectoryProducer, MotionPipeline
 from queue import Queue
 
 path = sys.argv[1]

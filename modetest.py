@@ -2,10 +2,10 @@ import argparse
 import logging
 import threading
 
-from camera_producer import CameraProducer
-from config import Configurable
-from scheduling import Schedule
-from threads import ImageWriter, ImageProducer, CameraImage
+from pilapse.camera_producer import CameraProducer
+from pilapse.config import Configurable
+from pilapse.scheduling import Schedule
+from pilapse.threads import ImageWriter, ImageProducer, CameraImage
 import pilapse as pl
 from queue import Queue
 from picamera import PiCamera
@@ -14,8 +14,8 @@ class ModeTestCameraProducer(CameraProducer):
     ARGS_ADDED = False
     @classmethod
     def add_arguments_to_parser(cls, parser:argparse.ArgumentParser, argument_group_name:str= 'Camera Settings')->argparse.ArgumentParser:
-        logging.debug(f'Adding CameraProducer({cls}) args (ADDED: {ModeTestCameraProducer.ARGS_ADDED})')
-        if ModeTestCameraProducer.ARGS_ADDED:
+        logging.info(f'Adding {cls.__name__} args to parser (ADDED:{cls.ARGS_ADDED})')
+        if cls.ARGS_ADDED:
             return parser
         CameraProducer.add_arguments_to_parser(parser, argument_group_name)
         parser.add_argument('--ignore-exposure', type=str,

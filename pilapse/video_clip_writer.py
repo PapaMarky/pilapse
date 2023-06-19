@@ -7,8 +7,8 @@ from datetime import datetime
 
 import cv2
 
-from threads import ImageConsumer
-from video_clip import VideoClip
+from pilapse.threads import ImageConsumer
+from pilapse.video_clip import VideoClip
 
 
 class MotionVideoProcessor(ImageConsumer):
