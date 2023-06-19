@@ -41,7 +41,7 @@ class Suntime:
         else:
             self.location = location
         self.date = date
-        self.data = self.get_sunrise_info()
+        self.data = self.get_suntime_info()
 
     def _get_value(self, valuename):
         if self.data is not None and valuename in self.data:
@@ -180,7 +180,7 @@ class Suntime:
         p = self.map_time(now, self.last_light, self.t_first_light)
         return ('last_light', 't_first_light', p)
 
-    def get_sunrise_info(self) -> dict:
+    def get_suntime_info(self) -> dict:
         latitude, longitude = self.location
         url = f'https://api.sunrisesunset.io/json?lat={latitude}&lng={longitude}&date={self.date}'
         logging.debug(f'suntime url: {url}')

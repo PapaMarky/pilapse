@@ -39,6 +39,7 @@ class Schedule(Configurable):
         self._paused:bool = False if config.run_from is None else True
 
         self._suntimes = None
+        logging.info(f'location: {config.location}')
         self._location = config.location
 
         def value_to_time(value):
@@ -88,6 +89,10 @@ class Schedule(Configurable):
                 logging.exception(f'Exception while parsing "run_until" ({config.run_until})')
                 raise e
             logging.info(f' - run-until is {self.run_until}')
+
+    @property
+    def location(self):
+        return self._location
 
     @property
     def suntimes(self):

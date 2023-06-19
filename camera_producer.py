@@ -13,7 +13,7 @@ import pilapse
 import threads
 from camera import Camera
 from pause_until import pause_until
-from pilapse import BGR
+from pilapse.colors import BGR
 from threads import ImageProducer, CameraImage
 from scheduling import Schedule
 from light_meter import LightMeter
