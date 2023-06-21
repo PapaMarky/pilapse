@@ -16,6 +16,8 @@ def parse_args():
                         default=24)
     parser.add_argument('--type', help='type of image file (extension: png, jpg, etc)')
     parser.add_argument('--output', help='name / path of output file: default: "output.mov"', default='output.mov')
+    parser.add_argument('--darkframe', help='specify a "dark frame" to subract from each frame to '
+                                            'eliminate "hot pixels"')
     parser.add_argument('imgdir', help='path to directory holding images')
     return parser.parse_args()
 
@@ -24,6 +26,8 @@ print(sys.argv)
 config = parse_args()
 
 IMAGE_DIR = config.imgdir
+
+darkframe = None if config.darkframe is None else cv2.imread(config.darkframe)
 
 if not os.path.isdir(IMAGE_DIR):
     print(f'image dir does not exist or is not a directory.')
@@ -41,6 +45,12 @@ img1 = cv2.imread(filelist[0])
 
 height, width, _ = img1.shape
 print(f'Image Size: {width} x {height}')
+if darkframe is not None:
+    dh, dw, _ = darkframe.shape
+    if dh != height or dw != width:
+        print(f'Dark frame size must match input images.')
+        sys.exit(1)
+
 img1 = None
 
 # choose codec according to format needed
@@ -65,6 +75,8 @@ for file in filelist:
     if img is None:
         print(f'Could not load {file}')
         continue
+    if darkframe is not None:
+        img = cv2.subtract(img, darkframe)
     video.write(img)
 
     count += 1
@@ -76,3 +88,5 @@ for file in filelist:
 
 cv2.destroyAllWindows()
 video.release()
+
+print(f'video written to {config.output}')
