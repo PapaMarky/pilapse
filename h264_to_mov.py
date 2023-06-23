@@ -1,23 +1,20 @@
-import time
+import argparse
 
 import cv2
 import sys
 import os
-from picamera import PiCamera
 
-testfile = 'test_vid.h264'
-outfile = 'test_vid_out.mov'
-print(f'creating: {testfile}')
+parser = argparse.ArgumentParser('Convert h264 format video to mp4')
+parser.add_argument('video_in', type=str, help='Path to video file to convert')
+config = parser.parse_args()
 
-camera = PiCamera(sensor_mode=5,
-                  # framerate_range=(1/10, 40),
-                  resolution=(640,480))
-camera.start_recording(testfile, format=None,sps_timing=True)
+video_in = config.video_in
 
-time.sleep(3)
-camera.stop_recording()
+outfile = os.path.splitext(video_in)[0] + '.mp4'
+print(f'converting: {video_in}')
+print(f'output: {outfile}')
 
-video_cap = cv2.VideoCapture(testfile)
+video_cap = cv2.VideoCapture(video_in)
 frame_width = int(video_cap.get(cv2.CAP_PROP_FRAME_WIDTH))
 frame_height = int(video_cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
 fps = int(video_cap.get(cv2.CAP_PROP_FPS))
@@ -28,15 +25,12 @@ fourcc = cv2.VideoWriter_fourcc('m', 'p', '4', 'v') # note the lower case
 video = cv2.VideoWriter()
 success = video.open(outfile,fourcc,fps,capSize)
 
-print(f'Expecting {frame_count} frames')
 n = 1
 while True:
     # `success` is a boolean and `frame` contains the next video frame
-    print(f'show frame {n}...')
     n += 1
     success, frame = video_cap.read()
     pos = video_cap.get(cv2.CAP_PROP_POS_FRAMES)
-    print(f'p: {pos}')
     if not success:
         print(f'Success not true')
         break
@@ -49,4 +43,5 @@ while True:
 # we also need to close the video and destroy all Windows
 video_cap.release()
 video.release()
-#cv2.destroyAllWindows()
+
+print(f'Done: {outfile}')
