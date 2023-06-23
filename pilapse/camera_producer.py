@@ -252,6 +252,8 @@ class CameraProducer(ImageProducer):
             self.shutdown_event.wait(2)
 
     def calculate_camera_settings(self):
+        if self.camera.model == 'HQ':
+            return 800, 1000000
         if self.config.video:
             return 0, 0
         if self.config.nightsky:
@@ -279,6 +281,7 @@ class CameraProducer(ImageProducer):
     def on_shutdown(self):
         logging.warning(f'{self.name} shutdown event received')
         self.check_video_clip()
+        self.camera.shutdown()
 
     def on_clip_complete(self):
         if self.previous_video_clip is not None:

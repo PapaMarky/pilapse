@@ -35,11 +35,12 @@ class Camera():
         framerate_range = None if video else (1/10, 40)
         logging.info(f'Video mode: {video}')
         logging.info(f'framerate_range: {framerate_range}')
-        self.camera = PiCamera()
+        self.camera = PiCamera(resolution=(width, height))
         camera_model = self.model
         self.camera.close()
         if camera_model == 'HQ':
             self._sensor_mode = 2
+
         if video:
             framerate = 30
             self.camera = PiCamera(sensor_mode=self._sensor_mode,
@@ -91,7 +92,11 @@ class Camera():
                 logging.info(f'   - shutter_speed: {self.camera.shutter_speed}')
                 logging.info(f'   - iso: {self.camera.iso}')
                 logging.info(f'   - exposure mode: {self.camera.exposure_mode}')
-
+            elif self.camera.model == 'HQ':
+                self.camera.shutter_speed = 1000000
+                self.camera.iso = 800
+                time.sleep(30)
+                self.camera.exposure_mode = 'off'
 
         modes = []
         for m in PiCamera.EXPOSURE_MODES:
