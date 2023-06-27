@@ -1,9 +1,30 @@
 <html>
 <head>
-    <title>{hostname} Setup App (Picamera2)</title>
+    <title>Setup Picamera</title>
 </head>
 <body>
-<h1>{hostname} Setup App (Picamera2)</h1>
-<img src="stream.mjpg" width="{width}" height="{height}" />
+<h1>System Info for {{ hostname }}</h1>
+<table>
+    <tr><th>Hardware</th><td>{{ pi_model }}</td></tr>
+    <tr><th>Camera</th><td>{{ camera_model }}</td></tr>
+</table>
+<br/>
+<b>Sensor Modes</b><br/>
+<table>
+    <tr><th>Format</th><th>Size</th><th>Exposure Limits</th><th>FPS</th>
+    <th>Bit Depth</th><th>Crop Limits</th></tr>
+{% for sensor_mode in sensor_modes %}
+<tr>
+    <td>{{ sensor_mode['format'] }}</td>
+    <td>{{ sensor_mode["size"][0] }} x {{ sensor_mode["size"][1] }}</td>
+    <td>{{ sensor_mode['exposure_limits'][0] }} to {{ sensor_mode['exposure_limits'][1] }}</td>
+    <td>{{ sensor_mode['fps'] }}</td>
+    <td>{{ sensor_mode['bit_depth'] }}</td>
+    <td>{{ sensor_mode['crop_limits'] }}</td>
+</tr>
+{% endfor %}
+</table>
+
+<!-- <img src="stream.mjpg" width="{width}" height="{height}" /> -->
 </body>
 </html>
