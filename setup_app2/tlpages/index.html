@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Setup Picamera</title>
+    <script src="timelapse_app.js"></script>
+</head>
+<body>
+<img id="latest_img" width="960"  /><br/>
+<label id="img_label">Image Name</label>
+<table>
+    <tr><td><label>PID</label></td><td><input type="text" id="pid" value="{{ pid }}"/></td></tr>
+    <tr><td><label>Exposure Speed</label></td><td><input type="text" id="exposure_time" value="{{ exposure_time }}"/></td></tr>
+    <tr><td><label>Zoom</label></td><td><input type="text" id="zoom" value="1.0"</td></tr>
+</table>
+
+<button onclick="set_exposure_time()">Update</button><br/>
+<button onclick="update_image()">Get Latest</button>
+<hr/>
+<script>
+update_image();
+start_image_loop();
+</script>
+
+</body>
+</html>

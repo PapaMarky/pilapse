@@ -1,6 +1,7 @@
 <html>
 <head>
     <title>Setup Picamera</title>
+    <script src="setup_app.js"></script>
 </head>
 <body>
 <h1>System Info for {{ hostname }}</h1>
@@ -9,7 +10,17 @@
     <tr><th>Camera</th><td>{{ camera_model }}</td></tr>
 </table>
 <br/>
-<img src="stream.mjpg" width="640" height="480" />
+<img src="stream.mjpg" width={{ img_w }} height={{ img_h }} />
+<hr/>
+<label>Exposure Speed</label><input type="number" id="exposure_time" value="{{ exposure_time }}"/>
+<button onclick="set_exposure_time()">Update Exposure</button>
+<br/>
+<label>Zoom</label>
+<select name="zoom" id="zoom" onchange="zoom_changed()">
+    <option value="1">1</option>
+    <option value="2">2</option>
+    <option value="4">4</option>
+</select>
 <hr/>
 <b>Sensor Modes</b><br/>
 <table>

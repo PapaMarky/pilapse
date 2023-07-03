@@ -24,6 +24,9 @@ def get_program_name():
     return name
 
 def parse_arguments():
+    # TODO : make two versions: still capture and video capture (streaming)
+    # Use video for setting up the shot
+    # Use still capture for setting exposure time, etc
     parser = argparse.ArgumentParser('Simple WebServer')
     parser.add_argument('--port', type=int, default=8888,
                         help='Port for server to listen on')
@@ -71,9 +74,17 @@ def exit_gracefully(signum, frame):
 
 if __name__ == '__main__':
     config = parse_arguments()
+    ar = config.width/config.height
+    ar_16_9 = 16/9
+    ar_4_3 = 4/3
+    d1 = abs(ar-ar_16_9)
+    d2 = abs(ar-ar_4_3)
+    ar = '4:3' if d1 > d2 else '16:9'
     setup_logging(config.logfile)
     logging.info(f'App Dir: {APP_DIR}')
     logging.info(f'Starting WebServer on port {config.port}')
+    logging.info(f'Aspect Ratio: {ar}')
+
 
     # Make a thread safe wrapper for the Picamera2 object?
     # CameraController thread?
@@ -81,10 +92,15 @@ if __name__ == '__main__':
     transform=Transform(hflip=False, vflip=False)
     picam2.configure(picam2.create_video_configuration(main={"size": (config.width, config.height)},
                                                        transform=transform))
+    controls = {"AeEnable": False, "AwbEnable": False, "FrameRate": 0.333}
+    picam2.set_controls(controls)
+    # picam2.video_configuration.controls.FrameRate = 10.0
+
     output = StreamingOutput()
     SetupServerHandler.PICAMERA = picam2
     SetupServerHandler.OUTPUT = output
     SetupServerHandler.SENSOR_MODES = picam2.sensor_modes
+    SetupServerHandler.ASPECT_RATIO = ar
     picam2.start_recording(MJPEGEncoder(), FileOutput(output))
 
     try:

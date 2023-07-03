@@ -7,6 +7,7 @@ import sys
 import cv2
 from datetime import datetime
 
+from pilapse.darkframe import apply_darkframe
 
 def parse_args():
     parser = argparse.ArgumentParser('Make a directory full of images into a video')
@@ -16,9 +17,12 @@ def parse_args():
                         default=24)
     parser.add_argument('--type', help='type of image file (extension: png, jpg, etc)')
     parser.add_argument('--output', help='name / path of output file: default: "output.mov"', default='output.mov')
-    parser.add_argument('--darkframe', help='specify a "dark frame" to subract from each frame to '
-                                            'eliminate "hot pixels"')
     parser.add_argument('imgdir', help='path to directory holding images')
+    darkgroup = parser.add_argument_group('Using Darkframe to clean up dead / hot pixels')
+    darkgroup.add_argument('--darkframe', help='specify a "dark frame" to subract from each frame to '
+                                            'eliminate "hot pixels"')
+    darkgroup.add_argument('--threshold', '-t', type=int, default=7,
+                        help='Threshold determines how large of a defect to try to fix')
     return parser.parse_args()
 
 print(sys.argv)
@@ -76,7 +80,8 @@ for file in filelist:
         print(f'Could not load {file}')
         continue
     if darkframe is not None:
-        img = cv2.subtract(img, darkframe)
+        # img = cv2.subtract(img, darkframe)
+        img = apply_darkframe(img, darkframe, threshold=config.threshold)
     video.write(img)
 
     count += 1

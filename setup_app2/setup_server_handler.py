@@ -16,7 +16,8 @@ class SetupServerHandler(server.BaseHTTPRequestHandler):
     PICAMERA = None
     SENSOR_MODES = {}
     OUTPUT = None
-
+    ASPECT_RATIO = '4:3'
+    SCALAR_CROP_BASE=None
     def __init__(self, request, client_address, server):
         super().__init__(request, client_address, server)
         self._content_directory = os.path.join(FILE_DIR, 'pages')
@@ -69,6 +70,9 @@ class SetupServerHandler(server.BaseHTTPRequestHandler):
             model = model[:-1]
         return model
 
+    def get_camera_metadata(self):
+        return self.PICAMERA.capture_metadata()
+
     def get_camera_model(self):
         if SetupServerHandler.PICAMERA is None:
             return 'None'
@@ -87,6 +91,21 @@ class SetupServerHandler(server.BaseHTTPRequestHandler):
             return {}
         return SetupServerHandler.SENSOR_MODES
 
+    def set_zoom(self):
+        x = self.path.split('?')
+        zoom = int(x[1].split('=')[1])
+        logging.info(f'set zoom: {zoom}')
+        metadata = self.get_camera_metadata()
+        if SetupServerHandler.SCALAR_CROP_BASE is None:
+            SetupServerHandler.SCALAR_CROP_BASE = metadata['ScalerCrop']
+        x, y, w, h = SetupServerHandler.SCALAR_CROP_BASE
+        new_w = w/zoom
+        new_h = h/zoom
+        new_x = x + w/2 - new_w/2
+        new_y = y + h/2 - new_h/2
+        controls = {'ScalerCrop': (int(new_x), int(new_y), int(new_w), int(new_h))}
+        self.PICAMERA.set_controls(controls)
+
     def do_GET(self):
         print(f'Request for {self.path}')
         print(f'PICAMERA: {self.PICAMERA}')
@@ -97,14 +116,56 @@ class SetupServerHandler(server.BaseHTTPRequestHandler):
         elif self.path == '/index.html':
             path = self.path[1:] if self.path.startswith('/') else self.path
             # [{'Model': 'imx708_wide', 'Location': 2, 'Rotation': 180, 'Id': '/base/soc/i2c0mux/i2c@1/imx708@1a'}]
+            metadata = self.get_camera_metadata()
+            print(f'ExposureTime: {metadata["ExposureTime"]}')
+            if SetupServerHandler.ASPECT_RATIO == '6:4':
+                img_w = 640
+                img_h = 480
+            else:
+                img_w= 1920 * 0.75
+                img_h = 1080 * 0.75
             self.render_page(os.path.basename(path),
                              hostname=platform.node(),
                              sensor_modes=self.get_sensor_modes(),
                              camera_model=self.get_camera_model(),
-                             pi_model=self.get_pi_model()
+                             pi_model=self.get_pi_model(),
+                             exposure_time=metadata['ExposureTime'],
+                             img_w=img_w,
+                             img_h=img_h,
                              )
         elif self.path == '/stream.mjpg':
             self.load_stream()
+        elif self.path.startswith('/set_zoom?'):
+            self.set_zoom()
+        elif self.path == '/setup_app.js':
+            self.send_response(200)
+            self.send_header('Content-Type', 'text/javascript')
+            with open(os.path.join(self.content_directory, 'setup_app.js')) as f:
+                content = f.read()
+            self.send_header('Content-Length', len(content))
+            self.end_headers()
+            self.wfile.write(content.encode('utf-8'))
+        elif self.path.startswith('/set_control?'):
+            a = self.path.split('?')[1]
+            args = a.split('&')
+            for arg in args:
+                n, v = arg.split('=')
+                if n == 'name':
+                    name = v
+                elif n == 'value':
+                    value = v
+                else:
+                    raise Exception(f'BAD REQUEST: {self.path}')
+            controls = {name: int(value)}
+            self.PICAMERA.set_controls(controls)
+            self.send_response(200)
+            self.send_header('Content-Type', 'text')
+            self.end_headers()
+            self.wfile.write('OK'.encode('utf-8'))
+            metadata = self.get_camera_metadata()
+            for m in metadata:
+                print(f'{m}: {metadata[m]}')
         else:
+            print(f'BAD REQUEST: {self.path}')
             self.send_error(404)
             self.end_headers()
