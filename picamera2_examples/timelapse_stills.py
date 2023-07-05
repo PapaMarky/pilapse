@@ -1,5 +1,6 @@
 #!/usr/bin/python3
 import json
+import logging
 import os
 import platform
 import signal
@@ -11,6 +12,27 @@ from libcamera import Transform
 
 from datetime import datetime, timedelta
 import argparse
+def get_program_name():
+    name = os.path.basename(sys.argv[0])
+    s = name.split('.')
+    if s[-1] == 'py':
+        name = '.'.join(s[:-1])
+    return name
+
+
+logfile = os.environ.get('LOGFILE')
+if not logfile:
+    logfile = f'{get_program_name()}.log'
+if logfile == 'stdout':
+    logfile = None
+
+print(f'Logging to {logfile}')
+
+logging.basicConfig(
+    filename=logfile,
+    level=logging.INFO,
+    format='%(asctime)s|%(levelname)s|%(threadName)s|%(message)s'
+)
 
 TIME_TO_STOP = False
 SET_EXPOSURE = False
@@ -52,6 +74,9 @@ parser.add_argument('--zoom', type=float, default=1.0,
                     help='Zoom. must be 1.0 or greater')
 parser.add_argument('--flip', action='store_true',
                     help='flip the image over. (use this if the images are upside down)')
+parser.add_argument('--stop-at', type=str, default='05:00:00',
+                    help='Stop running when this time is reached. (If this time has already passed today, '
+                         'stop at this time tomorrow. Format: HH:MM:SS (24 hour clock)')
 args = parser.parse_args()
 
 def exit_gracefully(signum, frame):
@@ -100,10 +125,17 @@ if args.zoom is not None and args.zoom < 1.0:
 
 frame_path = datetime.strftime(datetime.now(), args.framedir)
 
-stop_at = datetime.now()
-stop_at = stop_at.replace(hour=5, minute=0, second=0, microsecond=0)
-stop_at += timedelta(days=1)
 
+stop_time = args.stop_at.split(':')
+hour = stop_time[0]
+minute = stop_time[1]
+second = stop_time[2]
+
+now = datetime.now()
+stop_at = now.replace(hour=hour, minute=minute, second=second, microsecond=0)
+if stop_at < now:
+    stop_at += timedelta(days=1)
+logging.info(f'Timelapse will run until {stop_at.strftime("%H:%m:%s")}')
 picam2 = Picamera2()
 
 transform=Transform(hflip=args.flip, vflip=args.flip)
@@ -157,12 +189,18 @@ while True:
     if now >= stop_at:
         print('Time to stop')
         break
+    metadata = r.get_metadata()
+    # print(f'METADATA')
+    # print(f'{metadata}')
+    lux = metadata['Lux'] if 'Lux' in metadata else 'NOLUX'
+    exp_time = metadata['ExposureTime'] if 'ExposureTime' in metadata else 'NOEXP'
+    temp = metadata['SensorTemperature'] if 'SensorTemperature' in metadata else '???'
     ts = datetime.strftime(now, '%Y%m%d_%H%M%S.%f')
-    image_file = os.path.join(frame_path, f"{ts}.jpg")
+    image_file = os.path.join(frame_path, f"{ts}_L{lux:.4f}_E{exp_time}.jpg")
     r.save("main", image_file)
     r.release()
     time_remaining = stop_at - now
-    print(f"Captured {os.path.basename(image_file)}. Stopping in {timedelta_string(time_remaining)}")
+    print(f"Captured {os.path.basename(image_file)}. Temp: {temp} Stopping in {timedelta_string(time_remaining)}")
     if TIME_TO_STOP:
         print('Program stopping')
         break
