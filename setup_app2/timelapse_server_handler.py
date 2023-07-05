@@ -15,6 +15,17 @@ class SetupServerHandler(server.BaseHTTPRequestHandler):
     FRAME_DIR=None
     EXP=None
     PID=None
+    CAMERA_INFO = None
+
+    def get_pi_model(self):
+        with open('/proc/device-tree/model') as f:
+            model:str = f.read()
+        if model.endswith('\x00'):
+            model = model[:-1]
+        return model
+
+    def get_camera_metadata(self):
+        return self.PICAMERA.capture_metadata()
 
     def __init__(self, request, client_address, server):
         super().__init__(request, client_address, server)
@@ -85,7 +96,12 @@ class SetupServerHandler(server.BaseHTTPRequestHandler):
             self.end_headers()
         elif self.path == '/index.html':
             path = self.path[1:] if self.path.startswith('/') else self.path
-            self.render_page(os.path.basename(path), pid=SetupServerHandler.PID, exposure_time=SetupServerHandler.EXP)
+            self.render_page(os.path.basename(path),
+                             pid=SetupServerHandler.PID,
+                             exposure_time=SetupServerHandler.EXP,
+                             pi_model=self.get_pi_model(),
+                             camera_info=SetupServerHandler.CAMERA_INFO
+                             )
         elif self.path.startswith('/set_exposure'):
             # exp=n&pid=n
             logging.info(f'set_exposure request: {self.path}')
@@ -126,6 +142,14 @@ class SetupServerHandler(server.BaseHTTPRequestHandler):
             self.send_image(self.path)
         elif self.path == '/get_latest':
             self.load_latest_image()
+        elif self.path == '/timelapse.css':
+            self.send_response(200)
+            self.send_header('Content-Type', 'text/css')
+            with open(os.path.join(self.content_directory, os.path.basename(self.path))) as f:
+                content = f.read()
+            self.send_header('Content-Length', len(content))
+            self.end_headers()
+            self.wfile.write(content.encode('utf-8'))
         elif self.path == '/timelapse_app.js':
             self.send_response(200)
             self.send_header('Content-Type', 'text/javascript')

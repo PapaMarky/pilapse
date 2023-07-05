@@ -1,3 +1,5 @@
+#!/usr/bin/python3
+
 import argparse
 import io
 import json
@@ -74,6 +76,11 @@ def get_timelapse_pid():
             data = json.load(pidfile)
     return data
 
+def get_camera_info():
+    camera_info_file = '/home/pi/camera_info.json'
+    with open(camera_info_file) as f:
+        return json.load(f)
+
 if __name__ == '__main__':
     config = parse_arguments()
     setup_logging(config.logfile)
@@ -82,6 +89,7 @@ if __name__ == '__main__':
     logging.info(f' - framdir: {config.framedir}')
     SetupServerHandler.FRAME_DIR = datetime.strftime(datetime.now(), config.framedir)
 
+    SetupServerHandler.CAMERA_INFO = get_camera_info()
     timelapse_pid = get_timelapse_pid()
     print(f'timelapse info: {timelapse_pid}')
     SetupServerHandler.PID = timelapse_pid

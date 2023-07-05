@@ -7,6 +7,7 @@ import signal
 import sys
 import time
 
+import picamera2
 from picamera2 import Picamera2
 Picamera2.set_logging(Picamera2.WARNING)
 os.environ['LIBCAMERA_LOG_LEVELS'] = 'ERROR'
@@ -54,6 +55,43 @@ def get_program_name():
     if s[-1] == 'py':
         name = '.'.join(s[:-1])
     return name
+
+def get_camera_model(picam2):
+    if picam2 is None:
+        return 'None'
+    m = picam2.global_camera_info()[0]['Model']
+    known = {
+        'ov5647': 'V1',
+        'imx219': 'V2',
+        'imx477': 'HQ',
+        'imx708_wide': 'V3-wide'
+    }
+    if m in known:
+        return known[m]
+    return m
+
+def get_sensor_modes(picam2):
+    if picam2 is None:
+        return {}
+    sensor_modes = []
+    for mode in picam2.sensor_modes:
+        m = {}
+        for field in mode:
+            if isinstance(mode[field], picamera2.sensor_format.SensorFormat):
+                m[field] = str(mode[field])
+            else:
+                m[field] = mode[field]
+        sensor_modes.append(m)
+    return sensor_modes
+
+def save_camera_info(picam2):
+    camera_info_file = '/home/pi/camera_info.json'
+    camera_info = {
+        'model': get_camera_model(picam2),
+        'sensor_modes': get_sensor_modes(picam2)
+    }
+    with open(camera_info_file, 'w') as f:
+        json.dump(camera_info, f, indent=4)
 
 hostname = platform.node()
 frame_path = '/home/pi/exposures/%Y%m%d-timelapse'
@@ -157,6 +195,7 @@ else:
     stop_at = None
 
 picam2 = Picamera2()
+save_camera_info(picam2)
 
 transform=Transform(hflip=args.flip, vflip=args.flip)
 camera_config = picam2.create_still_configuration({'size': (args.width, args.height)}, transform=transform)

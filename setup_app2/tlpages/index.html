@@ -3,8 +3,17 @@
 <head>
     <title>Setup Picamera</title>
     <script src="timelapse_app.js"></script>
+    <link rel="stylesheet" href="timelapse.css">
 </head>
 <body>
+<h1>Timelapse Setup Helper {{ hostname }}</h1>
+<table>
+    <tr><th>Hardware</th><td>{{ pi_model }}</td></tr>
+    {% if camera_info %}
+    <tr><th>Camera Model</th><td>{{ camera_info['model'] }}</td></tr>
+    {% endif %}
+</table>
+<br/>
 <img id="latest_img" width="960"  /><br/>
 <label id="img_label">Image Name</label>
 <table>
@@ -16,6 +25,29 @@
 <button onclick="set_exposure_time()">Update</button><br/>
 <button onclick="update_image()">Get Latest</button>
 <hr/>
+{% if camera_info %}
+<h2>Sensor Modes</h2>
+<table class="boxtable">
+    <tr class="boxtable">
+        <th class="boxtable">Format</th>
+        <th class="boxtable">Bit Depth</th>
+        <th class="boxtable">Size</th>
+        <th class="boxtable">FPS</th>
+        <th class="boxtable">Crop Limits</th>
+        <th class="boxtable">Exposure Limits</th>
+    </tr>
+{% for mode in camera_info["sensor_modes"] %}
+    <tr>
+        <td class="boxtable">{{ mode["format"] }}</td>
+        <td class="boxtable">{{ mode["bit_depth"] }}</td>
+        <td class="boxtable">{{  mode["size"] }}</td>
+        <td class="boxtable">{{ mode["fps"] }}</td>
+        <td class="boxtable">{{ mode["crop_limits"] }}</td>
+        <td class="boxtable">{{ mode["exposure_limits"] }}</td>
+    </tr>
+{% endfor %}
+</table>
+{% endif %}
 <script>
 start_image_loop();
 </script>
