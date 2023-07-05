@@ -18,12 +18,21 @@ function set_exposure_time() {
 }
 
 function start_image_loop() {
-    console.log("starting update image loop")
-    setInterval(update_image, 10000)
+    console.log("starting autoload image loop")
+    setInterval(do_autoload, 10000)
+}
+
+function do_autoload() {
+    if (! document.getElementById("autoload").checked) {
+        console.log("autoload: disabled")
+        return
+    }
+    console.log('autoload: enabled')
+    update_image()
 }
 function update_image() {
-    var xhttp = new XMLHttpRequest();
-    console.log('update_image')
+    var xhttp = new XMLHttpRequest()
+    console.log("update_image")
     document.getElementById("img_label").innerHTML = 'Loading...'
     xhttp.onreadystatechange = function() {
         if (this.readyState == 4 && this.status == 200) {
