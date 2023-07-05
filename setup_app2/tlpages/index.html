@@ -7,24 +7,24 @@
 </head>
 <body>
 <h1>Timelapse Setup Helper {{ hostname }}</h1>
-<table>
-    <tr><th>Hardware</th><td>{{ pi_model }}</td></tr>
-    {% if camera_info %}
-    <tr><th>Camera Model</th><td>{{ camera_info['model'] }}</td></tr>
-    {% endif %}
-</table>
 <br/>
-<img id="latest_img" width="960"  /><br/>
-<label id="img_label">Image Name</label>
+<img id="latest_img" width="900"  /><br/>
+<label id="img_label" class="right">Image Name</label>
 <table>
-    <tr><td><label>Exposure Speed</label></td><td><input type="text" id="exposure_time" value="{{ exposure_time }}"/></td></tr>
-    <tr><td><label>Zoom</label></td><td><input type="text" id="zoom" value="1.0"</td></tr>
-    <tr><td><label>PID</label></td><td><input type="text" id="pid" value="{{ pid }}" disabled/></td></tr>
+    <tr><td class="right"><label>Exposure Speed</label></td><td><input type="text" id="exposure_time" value="{{ exposure_time }}"/></td></tr>
+    <tr><td class="right"><label>Zoom</label></td><td><input type="text" id="zoom" value="1.0"</td></tr>
+    <tr><td class="right"><label>PID</label></td><td><input type="text" id="pid" value="{{ pid }}" disabled/></td></tr>
 </table>
 <input type="checkbox" id="autoload" name="autoload" /><label>Auto Load Images</label><br/>
 <button onclick="set_exposure_time()">Update</button><br/>
 <button onclick="update_image()">Get Latest</button>
 <hr/>
+<table>
+    <tr><th class="right">Hardware</th><td>{{ pi_model }}</td></tr>
+    {% if camera_info %}
+    <tr><th class="right">Camera Model</th><td>{{ camera_info['model'] }}</td></tr>
+    {% endif %}
+</table>
 {% if camera_info %}
 <h2>Sensor Modes</h2>
 <table class="boxtable">

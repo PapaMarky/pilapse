@@ -3,3 +3,11 @@
   border-collapse: collapse;
   padding: 5px;
 }
+
+.right {
+    text-align: right;
+}
+
+html * {
+    font-family: Arial, Helvetica, sans-serif;
+}

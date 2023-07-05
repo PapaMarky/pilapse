@@ -101,5 +101,6 @@ if __name__ == '__main__':
 
     logging.info(f'FRAME_DIR: {SetupServerHandler.FRAME_DIR}')
     server = WebServer(SetupServerHandler, port=config.port)
+    # TODO: make this aware of TIME_TO_STOP
     server.serve_forever(poll_interval=0.5)
 
