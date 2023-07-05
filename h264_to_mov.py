@@ -56,6 +56,7 @@ def convert_file(video_in, outtype):
 video_in = config.video_in
 
 def timedelta_formatter(td:timedelta):
+    #  TODO : move to library
     td_sec = td.seconds
     hour_count, rem = divmod(td_sec, 3600)
     minute_count, second_count = divmod(rem, 60)

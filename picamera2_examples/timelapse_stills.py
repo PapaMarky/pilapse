@@ -75,9 +75,24 @@ parser.add_argument('--zoom', type=float, default=1.0,
 parser.add_argument('--flip', action='store_true',
                     help='flip the image over. (use this if the images are upside down)')
 parser.add_argument('--stop-at', type=str, default='05:00:00',
-                    help='Stop running when this time is reached. (If this time has already passed today, '
-                         'stop at this time tomorrow. Format: HH:MM:SS (24 hour clock)')
+                    help='Stop running when this time is reached. If this time has already passed today, '
+                         'stop at this time tomorrow. Format: HH:MM:SS (24 hour clock). '
+                         'If this is not set, timelapse will run forever or until killed with signal')
 args = parser.parse_args()
+
+def timedelta_formatter(td:timedelta):
+    #  TODO : move to library
+    td_sec = td.seconds
+    hour_count, rem = divmod(td_sec, 3600)
+    minute_count, second_count = divmod(rem, 60)
+    msg = f'{hour_count:02}:{minute_count:02}:{second_count:02}'
+    if td.days > 0:
+        day_str = f'{td.days} day'
+        if td.days > 1:
+            day_str += 's'
+        day_str += ' '
+        msg = day_str + msg
+    return msg
 
 def exit_gracefully(signum, frame):
     global TIME_TO_STOP
@@ -125,17 +140,20 @@ if args.zoom is not None and args.zoom < 1.0:
 
 frame_path = datetime.strftime(datetime.now(), args.framedir)
 
+if args.stop_at is not None:
+    stop_time = args.stop_at.split(':')
+    hour = int(stop_time[0])
+    minute = int(stop_time[1])
+    second = int(stop_time[2])
 
-stop_time = args.stop_at.split(':')
-hour = stop_time[0]
-minute = stop_time[1]
-second = stop_time[2]
+    now = datetime.now()
+    stop_at = now.replace(hour=hour, minute=minute, second=second, microsecond=0)
+    if stop_at < now:
+        print(f'WARNING: {stop_at} is in the past. Assuming you mean tomorrow and adjusting...')
+        stop_at += timedelta(days=1)
+else:
+    stop_at = None
 
-now = datetime.now()
-stop_at = now.replace(hour=hour, minute=minute, second=second, microsecond=0)
-if stop_at < now:
-    stop_at += timedelta(days=1)
-logging.info(f'Timelapse will run until {stop_at.strftime("%H:%m:%s")}')
 picam2 = Picamera2()
 
 transform=Transform(hflip=args.flip, vflip=args.flip)
@@ -178,17 +196,19 @@ time.sleep(1)
 def timedelta_string(td):
     return str(td).split('.')[0]
 
-print(f'Stopping at {stop_at.strftime("%Y-%m-%d %H:%M:%S")}')
+if stop_at is not None:
+    print(f'Timelapse will stop at {stop_at.strftime("%Y-%m-%d %H:%M:%S")} '
+          f'(Time from now: {timedelta_formatter(stop_at - now)})')
 print(f'Saving frames in {frame_path}')
 os.makedirs(frame_path, exist_ok=True)
 start_time = datetime.now()
 i = 0
 while True:
-    r = picam2.capture_request()
     now = datetime.now()
-    if now >= stop_at:
-        print('Time to stop')
+    if stop_at is not None and now >= stop_at:
+        print(f'Stop time {args.stop_at} reached...')
         break
+    r = picam2.capture_request()
     metadata = r.get_metadata()
     # print(f'METADATA')
     # print(f'{metadata}')
@@ -199,8 +219,8 @@ while True:
     image_file = os.path.join(frame_path, f"{ts}_L{lux:.4f}_E{exp_time}.jpg")
     r.save("main", image_file)
     r.release()
-    time_remaining = stop_at - now
-    print(f"Captured {os.path.basename(image_file)}. Temp: {temp} Stopping in {timedelta_string(time_remaining)}")
+    time_remaining_string = '' if stop_at is None else f' Stopping in {timedelta_string(stop_at - now)}'
+    print(f"Captured {os.path.basename(image_file)}. Temp: {temp}{time_remaining_string}")
     if TIME_TO_STOP:
         print('Program stopping')
         break

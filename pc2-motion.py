@@ -58,6 +58,9 @@ parser.add_argument('--zoom', type=float, default=1.0,
                     help='Digital zoom value to apply to camera. Default 1.0 (no zoom)')
 parser.add_argument('--flip', action='store_true',
                     help='Rotate image 180 degrees. Use this if your videos are upside down.')
+parser.add_argument('--stop-at', type=str, default='05:00:00',
+                    help='Stop running when this time is reached. (If this time has already passed today, '
+                         'stop at this time tomorrow. Format: HH:MM:SS (24 hour clock)')
 args = parser.parse_args()
 
 debug = True
@@ -80,6 +83,34 @@ if args.exposure is not None:
               }
 
 MAX_MSE = args.mse
+
+def timedelta_formatter(td:timedelta):
+    #  TODO : move to library
+    td_sec = td.seconds
+    hour_count, rem = divmod(td_sec, 3600)
+    minute_count, second_count = divmod(rem, 60)
+    msg = f'{hour_count:02}:{minute_count:02}:{second_count:02}'
+    if td.days > 0:
+        day_str = f'{td.days} day'
+        if td.days > 1:
+            day_str += 's'
+        day_str += ' '
+        msg = day_str + msg
+    return msg
+
+if args.stop_at is not None:
+    stop_time = args.stop_at.split(':')
+    hour = int(stop_time[0])
+    minute = int(stop_time[1])
+    second = int(stop_time[2])
+
+    now = datetime.now()
+    stop_at = now.replace(hour=hour, minute=minute, second=second, microsecond=0)
+    if stop_at < now:
+        print(f'WARNING: {stop_at} is in the past. Assuming you mean tomorrow and adjusting...')
+        stop_at += timedelta(days=1)
+else:
+    stop_at = None
 
 video_config = picam2.create_video_configuration(
     main={"size": (1920, 1080), "format": "RGB888"},
@@ -130,6 +161,10 @@ file_basename = ''
 
 print('- BEGINNING MOTION DETECTION AND CAPTURE -')
 
+if stop_at is not None:
+    print(f'Timelapse will run until {stop_at.strftime("%Y-%m-%d %H:%M:%S")} '
+          f'(Time from now: {timedelta_formatter(stop_at - now)})')
+
 while True:
     if TIME_TO_STOP:
         print('Shutting down...')
@@ -144,6 +179,10 @@ while True:
     # Create an overlay with the MSE for debugging
     if prev is not None:
         now = datetime.now()
+
+        if stop_at is not None and now >= stop_at:
+            print(f'Stop time {args.stop_at} reached...')
+            break
         # Measure pixels differences between current and
         # previous frame
         mse = np.square(np.subtract(cur, prev)).mean()
