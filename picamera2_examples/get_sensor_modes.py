@@ -1,3 +1,4 @@
+#!/usr/bin/python3
 
 import picamera2 as pc2
 import json
