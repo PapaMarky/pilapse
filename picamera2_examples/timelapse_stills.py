@@ -8,6 +8,8 @@ import sys
 import time
 
 from picamera2 import Picamera2
+Picamera2.set_logging(Picamera2.WARNING)
+os.environ['LIBCAMERA_LOG_LEVELS'] = 'ERROR'
 from libcamera import Transform
 
 from datetime import datetime, timedelta
