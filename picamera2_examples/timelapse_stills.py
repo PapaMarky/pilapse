@@ -24,12 +24,11 @@ def get_program_name():
 
 
 logfile = os.environ.get('LOGFILE')
-if not logfile:
-    logfile = f'{get_program_name()}.log'
-if logfile == 'stdout':
-    logfile = None
 
 print(f'Logging to {logfile}')
+
+if not logfile or logfile == 'stdout':
+    logfile = None
 
 logging.basicConfig(
     filename=logfile,
@@ -47,7 +46,7 @@ def set_timelapse_pid():
     with open(pid_path, 'w') as pidout:
         pid = os.getpid()
         pidout.write(f'{pid}')
-        print(f'PID: {pid} saved in {pid_path}')
+        logging.info(f'PID: {pid} saved in {pid_path}')
 
 def get_program_name():
     name = os.path.basename(sys.argv[0])
@@ -137,11 +136,11 @@ def timedelta_formatter(td:timedelta):
 def exit_gracefully(signum, frame):
     global TIME_TO_STOP
     TIME_TO_STOP = True
-    print(f'{get_program_name()} SHUTTING DOWN due to {signal.Signals(signum).name}')
+    logging.info(f'{get_program_name()} SHUTTING DOWN due to {signal.Signals(signum).name}')
 
 def do_update_exposure(picam2):
     global SET_EXPOSURE
-    print(f'Setting controls from exposure.txt')
+    logging.info(f'Setting controls from exposure.txt')
     if os.path.exists(exposure_file):
         controls = {}
         with open(exposure_file) as f:
@@ -162,20 +161,20 @@ def do_update_exposure(picam2):
 
 
             picam2.set_controls(controls)
-            print(f'Setting Controls: {controls}')
+            logging.info(f'Setting Controls: {controls}')
     SET_EXPOSURE = False
 
 def update_exposure(signum, frame):
     global SET_EXPOSURE
     SET_EXPOSURE = True
-    print(f'Update exposure command recieved')
+    logging.info(f'Update exposure command recieved')
 
 signal.signal(signal.SIGINT, exit_gracefully)
 signal.signal(signal.SIGTERM, exit_gracefully)
 signal.signal(signal.SIGUSR1, update_exposure)
 
 if args.zoom is not None and args.zoom < 1.0:
-    print('ERROR: zoom must be 1.0 or greater')
+    logging.error('zoom must be 1.0 or greater')
     sys.exit(1)
 
 frame_path = datetime.strftime(datetime.now(), args.framedir)
@@ -189,7 +188,7 @@ if args.stop_at is not None:
     now = datetime.now()
     stop_at = now.replace(hour=hour, minute=minute, second=second, microsecond=0)
     if stop_at < now:
-        print(f'WARNING: {stop_at} is in the past. Assuming you mean tomorrow and adjusting...')
+        logging.warning(f'{stop_at} is in the past. Assuming you mean tomorrow and adjusting...')
         stop_at += timedelta(days=1)
 else:
     stop_at = None
@@ -204,14 +203,14 @@ picam2.start()
 
 # Give time for Aec and Awb to settle, before disabling them
 time.sleep(3)
-print('Turning off Auto Exposure')
+logging.info('Turning off Auto Exposure')
 controls = {"AeEnable": False, "AwbEnable": False, "FrameRate": args.framerate}
-print(f'Setting exposure time to {args.exposure_time}')
+logging.info(f'Setting exposure time to {args.exposure_time}')
 if args.exposure_time is not None:
     controls['ExposureTime'] = args.exposure_time
 
 metadata = picam2.capture_metadata()
-print(f'METADATA: {metadata}')
+logging.info(f'METADATA: {metadata}')
 original_scaler_crop = metadata['ScalerCrop']
 set_timelapse_pid()
 fps = metadata['ExposureTime'] / 1000000
@@ -238,21 +237,21 @@ def timedelta_string(td):
     return str(td).split('.')[0]
 
 if stop_at is not None:
-    print(f'Timelapse will stop at {stop_at.strftime("%Y-%m-%d %H:%M:%S")} '
+    logging.info(f'Timelapse will stop at {stop_at.strftime("%Y-%m-%d %H:%M:%S")} '
           f'(Time from now: {timedelta_formatter(stop_at - now)})')
-print(f'Saving frames in {frame_path}')
+logging.info(f'Saving frames in {frame_path}')
 os.makedirs(frame_path, exist_ok=True)
 start_time = datetime.now()
 i = 0
 while True:
     now = datetime.now()
     if stop_at is not None and now >= stop_at:
-        print(f'Stop time {args.stop_at} reached...')
+        logging.info(f'Stop time {args.stop_at} reached...')
         break
     r = picam2.capture_request()
     metadata = r.get_metadata()
-    # print(f'METADATA')
-    # print(f'{metadata}')
+    # logging.info(f'METADATA')
+    # logging.info(f'{metadata}')
     lux = metadata['Lux'] if 'Lux' in metadata else 'NOLUX'
     exp_time = metadata['ExposureTime'] if 'ExposureTime' in metadata else 'NOEXP'
     temp = metadata['SensorTemperature'] if 'SensorTemperature' in metadata else '???'
@@ -261,12 +260,12 @@ while True:
     r.save("main", image_file)
     r.release()
     time_remaining_string = '' if stop_at is None else f' Stopping in {timedelta_string(stop_at - now)}'
-    print(f"Captured {os.path.basename(image_file)}. Temp: {temp}{time_remaining_string}")
+    logging.info(f"Captured {os.path.basename(image_file)}. Temp: {temp}{time_remaining_string}")
     if TIME_TO_STOP:
-        print('Program stopping')
+        logging.info('Program stopping')
         break
     if SET_EXPOSURE:
         do_update_exposure(picam2)
 
-print(f'Shutting down camera')
+logging.info(f'Shutting down camera')
 picam2.stop()
