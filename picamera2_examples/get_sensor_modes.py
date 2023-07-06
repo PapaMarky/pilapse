@@ -1,7 +1,10 @@
 #!/usr/bin/python3
+import os
 
 import picamera2 as pc2
-import json
+from picamera2 import Picamera2
+Picamera2.set_logging(Picamera2.WARNING)
+os.environ['LIBCAMERA_LOG_LEVELS'] = 'ERROR'
 
 c = pc2.Picamera2()
 
