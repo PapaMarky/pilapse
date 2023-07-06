@@ -119,6 +119,20 @@ parser.add_argument('--stop-at', type=str, default='05:00:00',
                          'If this is not set, timelapse will run forever or until killed with signal')
 args = parser.parse_args()
 
+class MetaDataLog:
+    def __init__(self, filepath):
+        self._file = open(filepath, 'w')
+
+    def __del__(self):
+        self._file.flush()
+        self._file.close()
+
+    def addline(self, line):
+        self._file.write(line)
+        self._file.flush()
+
+metalog = MetaDataLog(os.path.join(os.path.dirname(args.framedir), f'{args.framedir}-metadata.log'))
+
 def timedelta_formatter(td:timedelta):
     #  TODO : move to library
     td_sec = td.seconds
@@ -250,17 +264,16 @@ while True:
         break
     r = picam2.capture_request()
     metadata = r.get_metadata()
-    # logging.info(f'METADATA')
-    # logging.info(f'{metadata}')
     lux = metadata['Lux'] if 'Lux' in metadata else 'NOLUX'
     exp_time = metadata['ExposureTime'] if 'ExposureTime' in metadata else 'NOEXP'
-    temp = metadata['SensorTemperature'] if 'SensorTemperature' in metadata else '???'
     ts = datetime.strftime(now, '%Y%m%d_%H%M%S.%f')
     image_file = os.path.join(frame_path, f"{ts}_L{lux:.4f}_E{exp_time}.jpg")
     r.save("main", image_file)
     r.release()
+    image_base_name = os.path.basename(image_file)
+    metalog.addline(f'{image_base_name} | {metadata}')
     time_remaining_string = '' if stop_at is None else f' Stopping in {timedelta_string(stop_at - now)}'
-    logging.info(f"Captured {os.path.basename(image_file)}. Temp: {temp}{time_remaining_string}")
+    logging.info(f"Captured {image_base_name}. {time_remaining_string}")
     if TIME_TO_STOP:
         logging.info('Program stopping')
         break
