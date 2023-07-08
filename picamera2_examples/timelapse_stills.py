@@ -129,6 +129,8 @@ class MetaDataLog:
 
     def addline(self, line):
         self._file.write(line)
+        if not line.endswith('\n'):
+            self._file.write('\n')
         self._file.flush()
 
 metalog = MetaDataLog(os.path.join(os.path.dirname(args.framedir), f'{args.framedir}-metadata.log'))
