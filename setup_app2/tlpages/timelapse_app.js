@@ -30,6 +30,25 @@ function do_autoload() {
     console.log('autoload: enabled')
     update_image()
 }
+
+function singleshot() {
+    var xhttp = new XMLHttpRequest(),
+        pid = document.getElementById("pid").value;
+
+    console.log("requesting singleshot (pid: "+pid+")")
+
+    document.getElementById("img_label").innerHTML = 'Requesting Singleshot...';
+
+    xhttp.onreadystatechange = function() {
+        if (this.readyState == 4 && this.status == 200) {
+           // Typical action to be performed when the document is ready:
+           console.log(xhttp.responseText);
+        }
+    };
+    xhttp.open("GET", "singleshot?pid=" + pid, true);
+    xhttp.send();
+}
+
 function update_image() {
     var xhttp = new XMLHttpRequest()
     console.log("update_image")

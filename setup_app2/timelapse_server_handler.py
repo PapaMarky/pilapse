@@ -67,6 +67,9 @@ class SetupServerHandler(server.BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(latest.encode('utf-8'))
 
+    def singleshot(self):
+        os.kill(int(pid), signal.SIGUSR1)
+
     def send_image(self, path):
         print(f'sending {path}')
         content_path = os.path.join(self.content_directory, path[1:])
@@ -142,6 +145,26 @@ class SetupServerHandler(server.BaseHTTPRequestHandler):
             self.send_image(self.path)
         elif self.path == '/get_latest':
             self.load_latest_image()
+        elif self.path.startswith('/singleshot?'):
+            a = self.path.split('?')[1]
+            args = a.split('&')
+            logging.info(f'args: {args}')
+            for arg in args:
+                logging.info(f'arg: {arg}')
+                n, v = arg.split('=')
+                if n == 'pid':
+                    pid = v
+                else:
+                    raise Exception(f'BAD REQUEST: {self.path}')
+            logging.info(f'Sending SIGUSR2 to {pid}')
+            os.kill(int(pid), signal.SIGUSR2)
+            self.send_response(200)
+            self.send_header('Content-Type', 'text')
+            content = 'OK'
+            self.send_header('Content-Length', len(content))
+            self.end_headers()
+            self.wfile.write(content.encode('utf-8'))
+
         elif self.path == '/timelapse.css':
             self.send_response(200)
             self.send_header('Content-Type', 'text/css')

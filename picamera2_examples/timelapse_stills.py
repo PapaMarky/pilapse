@@ -117,6 +117,9 @@ parser.add_argument('--stop-at', type=str, default='05:00:00',
                     help='Stop running when this time is reached. If this time has already passed today, '
                          'stop at this time tomorrow. Format: HH:MM:SS (24 hour clock). '
                          'If this is not set, timelapse will run forever or until killed with signal')
+parser.add_argument('--singleshot', action='store_true',
+                    help='Instead of timelapsing, only take a picture when SIGUSR2 is recieved. '
+                         '(for setting up and experimenting')
 args = parser.parse_args()
 
 class MetaDataLog:
@@ -249,21 +252,7 @@ picam2.set_controls(controls)
 # And wait for those settings to take effect
 time.sleep(1)
 
-def timedelta_string(td):
-    return str(td).split('.')[0]
-
-if stop_at is not None:
-    logging.info(f'Timelapse will stop at {stop_at.strftime("%Y-%m-%d %H:%M:%S")} '
-          f'(Time from now: {timedelta_formatter(stop_at - now)})')
-logging.info(f'Saving frames in {frame_path}')
-os.makedirs(frame_path, exist_ok=True)
-start_time = datetime.now()
-i = 0
-while True:
-    now = datetime.now()
-    if stop_at is not None and now >= stop_at:
-        logging.info(f'Stop time {args.stop_at} reached...')
-        break
+def capture_image():
     r = picam2.capture_request()
     metadata = r.get_metadata()
     lux = metadata['Lux'] if 'Lux' in metadata else 'NOLUX'
@@ -276,9 +265,40 @@ while True:
     metalog.addline(f'{image_base_name} | {metadata}')
     time_remaining_string = '' if stop_at is None else f' Stopping in {timedelta_string(stop_at - now)}'
     logging.info(f"Captured {image_base_name}. {time_remaining_string}")
+
+def take_single_shot(signum, frame):
+    if args.singleshot:
+        logging.info('Processing Request for SingleShot...')
+        capture_image()
+    else:
+        logging.info('Singleshot request recieved, but not in singleshot mode. Ignoring request.')
+signal.signal(signal.SIGUSR2, take_single_shot)
+
+def timedelta_string(td):
+    return str(td).split('.')[0]
+
+if stop_at is not None:
+    logging.info(f'Timelapse will stop at {stop_at.strftime("%Y-%m-%d %H:%M:%S")} '
+          f'(Time from now: {timedelta_formatter(stop_at - now)})')
+logging.info(f'Saving frames in {frame_path}')
+os.makedirs(frame_path, exist_ok=True)
+start_time = datetime.now()
+i = 0
+logging.info(f'READY FOR HELPER')
+while True:
+    now = datetime.now()
+    if stop_at is not None and now >= stop_at:
+        logging.info(f'Stop time {args.stop_at} reached...')
+        break
+    if args.singleshot:
+        time.sleep(args.framerate)
+    else:
+        capture_image()
+
     if TIME_TO_STOP:
         logging.info('Program stopping')
         break
+
     if SET_EXPOSURE:
         do_update_exposure(picam2)
 
