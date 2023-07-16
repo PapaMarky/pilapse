@@ -113,7 +113,7 @@ parser.add_argument('--zoom', type=float, default=1.0,
                     help='Zoom. must be 1.0 or greater')
 parser.add_argument('--flip', action='store_true',
                     help='flip the image over. (use this if the images are upside down)')
-parser.add_argument('--stop-at', type=str, default='05:00:00',
+parser.add_argument('--stop-at', type=str,
                     help='Stop running when this time is reached. If this time has already passed today, '
                          'stop at this time tomorrow. Format: HH:MM:SS (24 hour clock). '
                          'If this is not set, timelapse will run forever or until killed with signal')
@@ -124,6 +124,7 @@ args = parser.parse_args()
 
 class MetaDataLog:
     def __init__(self, filepath):
+        os.makedirs(os.path.dirname(filepath), exist_ok=True)
         self._file = open(filepath, 'w')
 
     def __del__(self):
@@ -136,7 +137,10 @@ class MetaDataLog:
             self._file.write('\n')
         self._file.flush()
 
-metalog = MetaDataLog(os.path.join(os.path.dirname(args.framedir), f'{args.framedir}-metadata.log'))
+logging.info(f'Framedir: {args.framedir}')
+metadata_log_file =os.path.join(os.path.dirname(args.framedir), f'{os.path.basename(args.framedir)}-metadata.log')
+logging.info(f'Metadata log: {metadata_log_file}')
+metalog = MetaDataLog(metadata_log_file)
 
 def timedelta_formatter(td:timedelta):
     #  TODO : move to library
@@ -166,10 +170,14 @@ def do_update_exposure(picam2):
             data = json.load(f)
             if 'ExposureTime' in data:
                 controls['ExposureTime'] = int(data['ExposureTime'])
+                print(f'data: {data}')
                 # calculate framerate from new exposure Time
                 fps = data['ExposureTime'] / 1000000
                 # if fps >
-                # controls['FrameRate'] = fps
+                controls['FrameDurationLimits'] = (int(data['ExposureTime']), int(data['ExposureTime']))
+                controls["AeEnable"] = False
+                controls["AwbEnable"] =  False
+                logging.info(f'New settings: Exposure time: {data["ExposureTime"]}, FPS: {fps}')
             if 'Zoom' in data:
                 x, y, w, h = original_scaler_crop
                 new_w = w/data['Zoom']
@@ -222,11 +230,14 @@ picam2.start()
 
 # Give time for Aec and Awb to settle, before disabling them
 time.sleep(3)
-logging.info('Turning off Auto Exposure')
-controls = {"AeEnable": False, "AwbEnable": False, "FrameRate": args.framerate}
+logging.info(f'Setting Framerate: {args.framerate}')
+controls = {"FrameRate": args.framerate}
 logging.info(f'Setting exposure time to {args.exposure_time}')
 if args.exposure_time is not None:
+    logging.info('Turning off Auto Exposure')
     controls['ExposureTime'] = args.exposure_time
+    controls["AeEnable"] = False
+    controls["AwbEnable"] =  False
 
 metadata = picam2.capture_metadata()
 logging.info(f'METADATA: {metadata}')
@@ -251,6 +262,8 @@ if args.zoom is not None:
 picam2.set_controls(controls)
 # And wait for those settings to take effect
 time.sleep(1)
+metadata = picam2.capture_metadata()
+logging.info(f'METADATA: {metadata}')
 
 def capture_image():
     r = picam2.capture_request()
@@ -266,12 +279,14 @@ def capture_image():
     time_remaining_string = '' if stop_at is None else f' Stopping in {timedelta_string(stop_at - now)}'
     logging.info(f"Captured {image_base_name}. {time_remaining_string}")
 
+logging.info(f'Setting up signal handler for single shot mode')
 def take_single_shot(signum, frame):
     if args.singleshot:
         logging.info('Processing Request for SingleShot...')
         capture_image()
     else:
         logging.info('Singleshot request recieved, but not in singleshot mode. Ignoring request.')
+
 signal.signal(signal.SIGUSR2, take_single_shot)
 
 def timedelta_string(td):
@@ -291,7 +306,7 @@ while True:
         logging.info(f'Stop time {args.stop_at} reached...')
         break
     if args.singleshot:
-        time.sleep(args.framerate)
+        time.sleep(1)
     else:
         capture_image()
 
