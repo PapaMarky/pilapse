@@ -8,9 +8,13 @@ import os
 import signal
 import socketserver
 import sys
+import time
 from datetime import datetime
 from http import server
 from threading import Condition
+
+from watchdog.events import FileSystemEventHandler
+from watchdog.observers import Observer
 
 from timelapse_server_handler import SetupServerHandler
 
@@ -68,18 +72,29 @@ def exit_gracefully(signum, frame):
     print(f'SHUTTING DOWN due to {signal.Signals(signum).name}')
     server.call_shutdown()
 
+pid_path = '/home/pi/timelapse.txt'
 def get_timelapse_pid():
-    pid_path = '/home/pi/timelapse.txt'
     data = None
     if os.path.exists(pid_path):
         with open(pid_path) as pidfile:
-            data = json.load(pidfile)
+            content = pidfile.read()
+            print(f'PID: {content}')
+            data = json.loads(content)
     return data
 
 def get_camera_info():
     camera_info_file = '/home/pi/camera_info.json'
     with open(camera_info_file) as f:
         return json.load(f)
+
+class PidMonitorHandler(FileSystemEventHandler):
+    def on_modified(self, event):
+        time.sleep(0.1)
+        timelapse_pid = get_timelapse_pid()
+        print(f'Timelapse PID: {timelapse_pid}')
+        SetupServerHandler.PID = timelapse_pid
+
+
 
 if __name__ == '__main__':
     config = parse_arguments()
@@ -93,6 +108,10 @@ if __name__ == '__main__':
     timelapse_pid = get_timelapse_pid()
     print(f'timelapse info: {timelapse_pid}')
     SetupServerHandler.PID = timelapse_pid
+    event_handler = PidMonitorHandler()
+    observer = Observer()
+    observer.schedule(event_handler, path=pid_path, recursive=False)
+    observer.start()
     controls = {}
     with open('/home/pi/exposure.txt') as f:
         data = json.load(f)
@@ -101,6 +120,9 @@ if __name__ == '__main__':
 
     logging.info(f'FRAME_DIR: {SetupServerHandler.FRAME_DIR}')
     server = WebServer(SetupServerHandler, port=config.port)
-    # TODO: make this aware of TIME_TO_STOP
-    server.serve_forever(poll_interval=0.5)
-
+    try:
+        # TODO: make this aware of TIME_TO_STOP
+        server.serve_forever(poll_interval=0.5)
+    except KeyboardInterrupt:
+        observer.stop()
+    observer.join()

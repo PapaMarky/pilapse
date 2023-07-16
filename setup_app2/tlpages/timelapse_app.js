@@ -1,6 +1,5 @@
 function set_exposure_time() {
     var exposure_time = document.getElementById("exposure_time").value,
-        pid = document.getElementById("pid").value,
         zoom = document.getElementById("zoom").value,
         xhttp = new XMLHttpRequest();
     console.log(exposure_time)
@@ -13,7 +12,7 @@ function set_exposure_time() {
            document.getElementById("img_label").innerHTML = xhttp.responseText
         }
     };
-    xhttp.open("GET", "set_exposure?exp=" + exposure_time + "&pid=" + pid + "&zoom=" + zoom, true);
+    xhttp.open("GET", "set_exposure?exp=" + exposure_time + "&zoom=" + zoom, true);
     xhttp.send();
 }
 
@@ -32,10 +31,9 @@ function do_autoload() {
 }
 
 function singleshot() {
-    var xhttp = new XMLHttpRequest(),
-        pid = document.getElementById("pid").value;
+    var xhttp = new XMLHttpRequest();
 
-    console.log("requesting singleshot (pid: "+pid+")")
+    console.log("requesting singleshot")
 
     document.getElementById("img_label").innerHTML = 'Requesting Singleshot...';
 
@@ -45,7 +43,7 @@ function singleshot() {
            console.log(xhttp.responseText);
         }
     };
-    xhttp.open("GET", "singleshot?pid=" + pid, true);
+    xhttp.open("GET", "singleshot", true);
     xhttp.send();
 }
 
