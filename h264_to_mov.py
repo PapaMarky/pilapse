@@ -102,5 +102,8 @@ if __name__ == '__main__':
     elapsed = datetime.now() - start_time
     print(f'Total Elapsed Time: {timedelta_formatter(elapsed)}')
     print(f'Total Files: {file_count}')
-    print(f'Per File Averages: elapsed time: {timedelta_formatter(elapsed/file_count)}, '
-          f'frames: {nframes/file_count:.2f}, fps: {(nframes/elapsed.total_seconds())/file_count:.2f}')
+    if file_count > 0:
+        print(f'Per File Averages: elapsed time: {timedelta_formatter(elapsed/file_count)}, '
+              f'frames: {nframes/file_count:.2f}, fps: {(nframes/elapsed.total_seconds())/file_count:.2f}')
+    else:
+        print(f'No files found')
