@@ -18,11 +18,15 @@ def parse_args():
     parser.add_argument('--type', help='type of image file (extension: png, jpg, etc)')
     parser.add_argument('--output', help='name / path of output file: default: "output.mov"', default='output.mov')
     parser.add_argument('imgdir', help='path to directory holding images')
+    parser.add_argument('--skip', type=int, default=0,
+                        help='Number of frames to skip. Default is zero. Zero frames are skipped, so all frames are '
+                             'used. If set to 1, everyother frame is used; if set to 2, every 3rd frame is used; etc.')
     darkgroup = parser.add_argument_group('Using Darkframe to clean up dead / hot pixels')
     darkgroup.add_argument('--darkframe', help='specify a "dark frame" to subract from each frame to '
                                             'eliminate "hot pixels"')
     darkgroup.add_argument('--threshold', '-t', type=int, default=7,
                         help='Threshold determines how large of a defect to try to fix')
+
     return parser.parse_args()
 
 print(sys.argv)
@@ -74,7 +78,13 @@ start = datetime.now()
 count = 0
 total = len(filelist)
 
+skipped = 0
 for file in filelist:
+    if skipped < config.skip:
+        skipped += 1
+        count += 1
+        continue
+    skipped = 0
     img = cv2.imread(file)
     if img is None:
         print(f'Could not load {file}')
