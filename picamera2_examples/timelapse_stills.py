@@ -12,6 +12,7 @@ from picamera2 import Picamera2
 Picamera2.set_logging(Picamera2.WARNING)
 os.environ['LIBCAMERA_LOG_LEVELS'] = 'ERROR'
 from libcamera import Transform
+import libcamera
 
 from datetime import datetime, timedelta
 import argparse
@@ -120,6 +121,9 @@ parser.add_argument('--stop-at', type=str,
 parser.add_argument('--singleshot', action='store_true',
                     help='Instead of timelapsing, only take a picture when SIGUSR2 is recieved. '
                          '(for setting up and experimenting')
+parser.add_argument('--nr', type=str, choices=['off', 'fast', 'best'], default=None,
+                    help='Choose noise reduction algorithm. Must be one of "off", "fast", or  "best". Default is to '
+                         'use what ever the camera defaults to.')
 args = parser.parse_args()
 
 class MetaDataLog:
@@ -238,6 +242,14 @@ if args.exposure_time is not None:
     controls['ExposureTime'] = args.exposure_time
     controls["AeEnable"] = False
     controls["AwbEnable"] =  False
+if args.nr is not None:
+    nr_dict = {
+        'off': libcamera.controls.draft.NoiseReductionModeEnum.Off,
+        'fast': libcamera.controls.draft.NoiseReductionModeEnum.Fast,
+        'best': libcamera.controls.draft.NoiseReductionModeEnum.HighQuality,
+    }
+    logging.info(f'Setting Noise reduction to {str(nr_dict[args.nr])}')
+    controls['NoiseReductionMode'] = nr_dict[args.nr]
 
 metadata = picam2.capture_metadata()
 logging.info(f'METADATA: {metadata}')
