@@ -41,7 +41,8 @@ TIME_TO_STOP = False
 SET_EXPOSURE = False
 
 pid_path = '/home/pi/timelapse.txt'
-exposure_file = '/home/pi/exposure.txt'
+timelapse_info_path = '/home/pi/timelapse_info.json'
+timelapse_info_path_helper = '/home/pi/timelapse_info_helper.json'
 
 def set_timelapse_pid():
     with open(pid_path, 'w') as pidout:
@@ -126,6 +127,10 @@ parser.add_argument('--nr', type=str, choices=['off', 'fast', 'best'], default=N
                          'use what ever the camera defaults to.')
 args = parser.parse_args()
 
+timelapse_info = dict(PID=os.getpid())
+
+print(f'timelapse_info: {timelapse_info}')
+
 class MetaDataLog:
     def __init__(self, filepath):
         os.makedirs(os.path.dirname(filepath), exist_ok=True)
@@ -142,6 +147,7 @@ class MetaDataLog:
         self._file.flush()
 
 logging.info(f'Framedir: {args.framedir}')
+
 metadata_log_file =os.path.join(os.path.dirname(args.framedir), f'{os.path.basename(args.framedir)}-metadata.log')
 logging.info(f'Metadata log: {metadata_log_file}')
 metalog = MetaDataLog(metadata_log_file)
@@ -167,10 +173,10 @@ def exit_gracefully(signum, frame):
 
 def do_update_exposure(picam2):
     global SET_EXPOSURE
-    logging.info(f'Setting controls from exposure.txt')
-    if os.path.exists(exposure_file):
+    logging.info(f'Setting controls from {timelapse_info_path_helper}')
+    if os.path.exists(timelapse_info_path_helper):
         controls = {}
-        with open(exposure_file) as f:
+        with open(timelapse_info_path_helper) as f:
             data = json.load(f)
             if 'ExposureTime' in data:
                 controls['ExposureTime'] = int(data['ExposureTime'])
@@ -208,7 +214,10 @@ if args.zoom is not None and args.zoom < 1.0:
     logging.error('zoom must be 1.0 or greater')
     sys.exit(1)
 
+timelapse_info['Zoom'] = args.zoom if args.zoom is not None else 1.0
+
 frame_path = datetime.strftime(datetime.now(), args.framedir)
+timelapse_info['Framedir'] = os.path.abspath(frame_path)
 
 if args.stop_at is not None:
     stop_time = args.stop_at.split(':')
@@ -238,6 +247,7 @@ logging.info(f'Setting Framerate: {args.framerate}')
 controls = {"FrameRate": args.framerate}
 logging.info(f'Setting exposure time to {args.exposure_time}')
 if args.exposure_time is not None:
+    timelapse_info['ExposureTime'] = args.exposure_time
     logging.info('Turning off Auto Exposure')
     controls['ExposureTime'] = args.exposure_time
     controls["AeEnable"] = False
@@ -250,18 +260,14 @@ if args.nr is not None:
     }
     logging.info(f'Setting Noise reduction to {str(nr_dict[args.nr])}')
     controls['NoiseReductionMode'] = nr_dict[args.nr]
+    timelapse_info['NoiseReductionMode'] = args.nr
 
 metadata = picam2.capture_metadata()
 logging.info(f'METADATA: {metadata}')
 original_scaler_crop = metadata['ScalerCrop']
 set_timelapse_pid()
-fps = metadata['ExposureTime'] / 1000000
-with open(exposure_file, 'w') as f:
-    data = {
-        'Zoom': float(args.zoom),
-        'ExposureTime': fps
-    }
-    f.write(json.dumps(data))
+with open(timelapse_info_path, 'w') as f:
+    f.write(json.dumps(timelapse_info))
 
 if args.zoom is not None:
     x, y, w, h = original_scaler_crop

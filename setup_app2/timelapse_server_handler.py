@@ -47,8 +47,9 @@ class SetupServerHandler(server.BaseHTTPRequestHandler):
         self.wfile.write(content)
 
     def load_latest_image(self):
-        frame_dir = SetupServerHandler.FRAME_DIR
+        frame_dir = SetupServerHandler.FRAME_DIR.replace('/home/pi', '')
         path = os.path.join(self.content_directory, SetupServerHandler.FRAME_DIR, '*.jpg')
+        print(f'CONTENT: {self.content_directory}')
         print(f'PATH: {path}')
         filelist = glob.glob(path)
         filelist.sort()
@@ -60,7 +61,7 @@ class SetupServerHandler(server.BaseHTTPRequestHandler):
             return
 
         latest = filelist[-1]
-        latest = '/' + frame_dir + '/' + os.path.basename(latest)
+        latest = frame_dir + '/' + os.path.basename(latest)
         print(f'LATEST: {latest}')
         self.send_response(200)
         self.send_header('Content-Type', 'text')
@@ -126,7 +127,7 @@ class SetupServerHandler(server.BaseHTTPRequestHandler):
                 'ExposureTime': float(exposure)
             }
             SetupServerHandler.EXP = controls['ExposureTime']
-            with open('/home/pi/exposure.txt', 'w') as f:
+            with open('/home/pi/timelapse_info_helper.json', 'w') as f:
                 logging.info(f'controls: {controls}')
                 data = json.dumps(controls)
                 logging.info(f'data: {data}')

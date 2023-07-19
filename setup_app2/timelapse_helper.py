@@ -44,8 +44,6 @@ def parse_arguments():
     parser.add_argument('--logfile', type=str, default='stdout',
                         help='Path of file to write log to. Set to "stdout" to specify console. Default is "stdout"')
     parser.add_argument('--html', type=str, default='html')
-    parser.add_argument('--framedir', type=str, required=True,
-                        help='path to where frames are stored (relative to content dir)')
     parser.add_argument('--exposure-time', type=int,
                         help='how long to expose each frame')
     return parser.parse_args()
@@ -72,11 +70,13 @@ def exit_gracefully(signum, frame):
     print(f'SHUTTING DOWN due to {signal.Signals(signum).name}')
     server.call_shutdown()
 
-pid_path = '/home/pi/timelapse.txt'
+timelapse_info_path = '/home/pi/timelapse_info.json'
+timelapse_info_path_out = '/home/pi/timelapse_info_helper.json'
+
 def get_timelapse_pid():
     data = None
-    if os.path.exists(pid_path):
-        with open(pid_path) as pidfile:
+    if os.path.exists(timelapse_info_path):
+        with open(timelapse_info_path) as pidfile:
             content = pidfile.read()
             print(f'PID: {content}')
             data = json.loads(content)
@@ -90,33 +90,32 @@ def get_camera_info():
 class PidMonitorHandler(FileSystemEventHandler):
     def on_modified(self, event):
         time.sleep(0.1)
-        timelapse_pid = get_timelapse_pid()
-        print(f'Timelapse PID: {timelapse_pid}')
-        SetupServerHandler.PID = timelapse_pid
-
-
+        timelapse_info = get_timelapse_pid()
+        print(f'Timelapse PID: {timelapse_info["PID"]}')
+        SetupServerHandler.PID = timelapse_info['PID']
+        SetupServerHandler.FRAME_DIR  = timelapse_info['Framedir']
+        # zoom and other settings are available, need to add an "update from timelapse" button and logic on the web page
 
 if __name__ == '__main__':
     config = parse_arguments()
     setup_logging(config.logfile)
     logging.info(f'App Dir: {APP_DIR}')
     logging.info(f'Starting WebServer on port {config.port}')
-    logging.info(f' - framdir: {config.framedir}')
-    SetupServerHandler.FRAME_DIR = datetime.strftime(datetime.now(), config.framedir)
 
     SetupServerHandler.CAMERA_INFO = get_camera_info()
     timelapse_pid = get_timelapse_pid()
     print(f'timelapse info: {timelapse_pid}')
-    SetupServerHandler.PID = timelapse_pid
+    SetupServerHandler.PID = timelapse_pid['PID']
+    SetupServerHandler.FRAME_DIR = timelapse_pid['Framedir']
     event_handler = PidMonitorHandler()
     observer = Observer()
-    observer.schedule(event_handler, path=pid_path, recursive=False)
+    observer.schedule(event_handler, path=timelapse_info_path, recursive=False)
     observer.start()
     controls = {}
     with open('/home/pi/exposure.txt') as f:
         data = json.load(f)
         if 'ExposureTime' in data:
-            SetupServerHandler.EXP = int(data['ExposureTime'] * 1000000)
+            SetupServerHandler.EXP = int(data['ExposureTime'])
 
     logging.info(f'FRAME_DIR: {SetupServerHandler.FRAME_DIR}')
     server = WebServer(SetupServerHandler, port=config.port)

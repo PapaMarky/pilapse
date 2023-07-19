@@ -18,15 +18,15 @@ function set_exposure_time() {
 
 function start_image_loop() {
     console.log("starting autoload image loop")
-    setInterval(do_autoload, 10000)
+    setInterval(do_autoload, 3000)
 }
 
 function do_autoload() {
     if (! document.getElementById("autoload").checked) {
-        console.log("autoload: disabled")
+        //console.log("autoload: disabled")
         return
     }
-    console.log('autoload: enabled')
+    //console.log('autoload: enabled')
     update_image()
 }
 
