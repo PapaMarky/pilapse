@@ -13,8 +13,9 @@ Picamera2.set_logging(Picamera2.WARNING)
 os.environ['LIBCAMERA_LOG_LEVELS'] = 'ERROR'
 from picamera2.encoders import MJPEGEncoder
 from picamera2.outputs import FileOutput
+from picamera2 import Picamera2, MappedArray
 from libcamera import Transform
-
+import cv2
 from setup_server_handler import SetupServerHandler
 from web_server import WebServer
 
@@ -91,6 +92,19 @@ if __name__ == '__main__':
     # CameraController thread?
     picam2 = Picamera2()
     picam2.options["quality"] = 95
+    colour = (255, 255, 255)
+    origin = (30, 30)
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    scale = 0.3
+    thickness = 2
+    frame_number = 0
+    def apply_timestamp(request):
+        global frame_number
+        timestamp = f'{frame_number:09}'
+        frame_number += 1
+        with MappedArray(request, "main") as m:
+            cv2.putText(m.array, timestamp, origin, font, scale, colour, thickness)
+    picam2.pre_callback = apply_timestamp
     transform=Transform(hflip=False, vflip=False)
     framerate = 0.333 if config.exposure_time is None else 1.0 / (config.exposure_time / 1000000)
     ### TODO look at this example: https://github.com/raspberrypi/picamera2/blob/main/examples/video_with_config.py
@@ -110,7 +124,7 @@ if __name__ == '__main__':
     SetupServerHandler.ASPECT_RATIO = ar
     logging.info(f'Set aspect ratio: {ar}')
 
-    picam2.start_recording(MJPEGEncoder(), FileOutput(output))
+    picam2.start_recording(MJPEGEncoder(bitrate=100000000), FileOutput(output))
     time.sleep(1)
     if config.exposure_time is not None:
         logging.info(f'Turning off Auto Exposure. framerate: {framerate}, exposure time: {config.exposure_time}')
