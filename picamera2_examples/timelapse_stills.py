@@ -239,7 +239,7 @@ save_camera_info(picam2)
 transform=Transform(hflip=args.flip, vflip=args.flip)
 camera_config = picam2.create_still_configuration({'size': (args.width, args.height)}, transform=transform)
 picam2.configure(camera_config)
-picam2.start()
+
 
 # Give time for Aec and Awb to settle, before disabling them
 time.sleep(3)
@@ -278,6 +278,9 @@ if args.zoom is not None:
     controls['ScalerCrop'] = (int(new_x), int(new_y), int(new_w), int(new_h))
 
 picam2.set_controls(controls)
+# set the controls before starting the camera so that the controls are in effect from the first capture
+picam2.start()
+
 # And wait for those settings to take effect
 time.sleep(1)
 metadata = picam2.capture_metadata()
