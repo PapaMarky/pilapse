@@ -252,6 +252,7 @@ if args.exposure_time is not None:
     controls['ExposureTime'] = args.exposure_time
     controls["AeEnable"] = False
     controls["AwbEnable"] =  False
+
 if args.nr is not None:
     nr_dict = {
         'off': libcamera.controls.draft.NoiseReductionModeEnum.Off,
@@ -262,14 +263,16 @@ if args.nr is not None:
     controls['NoiseReductionMode'] = nr_dict[args.nr]
     timelapse_info['NoiseReductionMode'] = args.nr
 
-metadata = picam2.capture_metadata()
-logging.info(f'METADATA: {metadata}')
-original_scaler_crop = metadata['ScalerCrop']
 set_timelapse_pid()
 with open(timelapse_info_path, 'w') as f:
     f.write(json.dumps(timelapse_info))
 
 if args.zoom is not None:
+    picam2.start()
+    metadata = picam2.capture_metadata()
+    picam2.stop()
+    logging.info(f'METADATA: {metadata}')
+    original_scaler_crop = metadata['ScalerCrop']
     x, y, w, h = original_scaler_crop
     new_w = w/args.zoom
     new_h = h/args.zoom
@@ -280,11 +283,17 @@ if args.zoom is not None:
 picam2.set_controls(controls)
 # set the controls before starting the camera so that the controls are in effect from the first capture
 picam2.start()
+# We need the original ScalarCrop to set the zoom, so we have to do this after starting the camera
 
 # And wait for those settings to take effect
 time.sleep(1)
 metadata = picam2.capture_metadata()
 logging.info(f'METADATA: {metadata}')
+# turn off auto focus if the camera supports it
+if 'AfMode' in picam2.camera_controls:
+    # TODO: should we only do this if ExposureTime is set and more than one second?
+    logging.info(f'Turning off auto focus')
+    picam2.set_controls({'AfMode': libcamera.controls.AfModeEnum.Manual})
 
 def capture_image():
     r = picam2.capture_request()
