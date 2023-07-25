@@ -4,6 +4,7 @@ import logging
 import os
 import platform
 import signal
+import subprocess
 import sys
 import time
 
@@ -119,6 +120,9 @@ parser.add_argument('--stop-at', type=str,
                     help='Stop running when this time is reached. If this time has already passed today, '
                          'stop at this time tomorrow. Format: HH:MM:SS (24 hour clock). '
                          'If this is not set, timelapse will run forever or until killed with signal')
+parser.add_argument('--poweroff', action='store_true',
+                    help='Power off the computer when "stop-at" time is reached. Has no effect if --stop-at is '
+                         'not set. User must be a sudoer to initiate power off.')
 parser.add_argument('--singleshot', action='store_true',
                     help='Instead of timelapsing, only take a picture when SIGUSR2 is recieved. '
                          '(for setting up and experimenting')
@@ -232,6 +236,8 @@ if args.stop_at is not None:
         stop_at += timedelta(days=1)
 else:
     stop_at = None
+    if args.poweroff:
+        logging.warning('--stop-at is not set, but --poweroff requested. Poweroff will be ignored.')
 
 picam2 = Picamera2()
 save_camera_info(picam2)
@@ -334,6 +340,15 @@ while True:
     now = datetime.now()
     if stop_at is not None and now >= stop_at:
         logging.info(f'Stop time {args.stop_at} reached...')
+        if args.poweroff:
+            logging.info(f'Power off requested. Powering off in one minute.')
+            p = subprocess.run(['sudo', 'shutdown', '--poweroff', '1'],
+                               stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+            if p.returncode != 0:
+                logging.error('Power off failed')
+                logging.error(p.stdout)
+            else:
+                logging.info(p.stdout)
         break
     if args.singleshot:
         time.sleep(1)
