@@ -129,6 +129,10 @@ parser.add_argument('--singleshot', action='store_true',
 parser.add_argument('--nr', type=str, choices=['off', 'fast', 'best'], default=None,
                     help='Choose noise reduction algorithm. Must be one of "off", "fast", or  "best". Default is to '
                          'use what ever the camera defaults to.')
+parser.add_argument('--analog-gain', type=float,
+                    help='Set the AnalogueGain. Default: None (let the camera decide). '
+                         'Kind of sets the "ISO" (ISO / 100.0 = Analogue Gain). Run '
+                         'get_sensor_modes.py to find the limits for the camera. Limits are silently enforced.')
 args = parser.parse_args()
 
 timelapse_info = dict(PID=os.getpid())
@@ -182,7 +186,7 @@ def do_update_exposure(picam2):
         controls = {}
         with open(timelapse_info_path_helper) as f:
             data = json.load(f)
-            if 'ExposureTime' in data:
+            if 'ExposureTime' in data and int(data['ExposureTime']) > 0:
                 controls['ExposureTime'] = int(data['ExposureTime'])
                 print(f'data: {data}')
                 # calculate framerate from new exposure Time
@@ -199,7 +203,8 @@ def do_update_exposure(picam2):
                 new_x = x + w/2 - new_w/2
                 new_y = y + h/2 - new_h/2
                 controls['ScalerCrop'] = (int(new_x), int(new_y), int(new_w), int(new_h))
-
+            if 'AnalogueGain' in data:
+                controls['AnalogueGain'] = float(data['AnalogueGain'])
 
             picam2.set_controls(controls)
             logging.info(f'Setting Controls: {controls}')
@@ -240,6 +245,7 @@ else:
         logging.warning('--stop-at is not set, but --poweroff requested. Poweroff will be ignored.')
 
 picam2 = Picamera2()
+picam2.options["quality"] = 95
 save_camera_info(picam2)
 
 transform=Transform(hflip=args.flip, vflip=args.flip)
@@ -251,6 +257,7 @@ picam2.configure(camera_config)
 time.sleep(3)
 logging.info(f'Setting Framerate: {args.framerate}')
 controls = {"FrameRate": args.framerate}
+
 logging.info(f'Setting exposure time to {args.exposure_time}')
 if args.exposure_time is not None:
     timelapse_info['ExposureTime'] = args.exposure_time
@@ -269,10 +276,6 @@ if args.nr is not None:
     controls['NoiseReductionMode'] = nr_dict[args.nr]
     timelapse_info['NoiseReductionMode'] = args.nr
 
-set_timelapse_pid()
-with open(timelapse_info_path, 'w') as f:
-    f.write(json.dumps(timelapse_info))
-
 if args.zoom is not None:
     picam2.start()
     metadata = picam2.capture_metadata()
@@ -285,6 +288,25 @@ if args.zoom is not None:
     new_x = x + w/2 - new_w/2
     new_y = y + h/2 - new_h/2
     controls['ScalerCrop'] = (int(new_x), int(new_y), int(new_w), int(new_h))
+
+timelapse_info['Zoom'] = args.zoom if args.zoom is not None else 1.0
+
+if args.exposure_time is None:
+    if metadata is None:
+        metadata = picam2.capture_metadata()
+    timelapse_info['ExposureTime'] = metadata['ExposureTime']
+
+if args.analog_gain is not None:
+    controls['AnalogueGain'] = args.analog_gain
+    timelapse_info['AnalogueGain'] = args.analog_gain
+else:
+    if metadata is None:
+        metadata = picam2.capture_metadata()
+    timelapse_info['AnalogueGain'] = metadata['AnalogueGain']
+
+set_timelapse_pid()
+with open(timelapse_info_path, 'w') as f:
+    f.write(json.dumps(timelapse_info))
 
 picam2.set_controls(controls)
 # set the controls before starting the camera so that the controls are in effect from the first capture

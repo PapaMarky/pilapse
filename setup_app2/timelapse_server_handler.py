@@ -13,9 +13,11 @@ class SetupServerHandler(server.BaseHTTPRequestHandler):
     TEMPLATE_DIR = os.path.join(FILE_DIR, 'tlpages')
     ENVIRONMENT = Environment(loader=FileSystemLoader(TEMPLATE_DIR))
     FRAME_DIR=None
-    EXP=None
+    EXPOSURE_TIME=None
     PID=None
     CAMERA_INFO = None
+    ANALOG_GAIN = ''
+    ZOOM = 1.0
 
     def get_pi_model(self):
         with open('/proc/device-tree/model') as f:
@@ -99,9 +101,11 @@ class SetupServerHandler(server.BaseHTTPRequestHandler):
             path = self.path[1:] if self.path.startswith('/') else self.path
             self.render_page(os.path.basename(path),
                              pid=SetupServerHandler.PID,
-                             exposure_time=SetupServerHandler.EXP,
+                             exposure_time=SetupServerHandler.EXPOSURE_TIME,
                              pi_model=self.get_pi_model(),
-                             camera_info=SetupServerHandler.CAMERA_INFO
+                             camera_info=SetupServerHandler.CAMERA_INFO,
+                             analog_gain=SetupServerHandler.ANALOG_GAIN,
+                             zoom=SetupServerHandler.ZOOM,
                              )
         elif self.path.startswith('/set_exposure'):
             logging.info(f'set_exposure request: {self.path}')
@@ -115,18 +119,21 @@ class SetupServerHandler(server.BaseHTTPRequestHandler):
                     exposure = v
                 elif n == 'zoom':
                     zoom = v
+                elif n == 'gain':
+                    gain = v
                 else:
                     raise Exception(f'BAD REQUEST: {self.path}')
             pid = SetupServerHandler.PID
-            print(f'New exposure: {exposure} / zoom: {zoom} for pid {pid}')
-            if not pid or not exposure or not zoom:
+            print(f'New exposure: {exposure} / zoom: {zoom} / gain: {gain} for pid {pid}')
+            if not pid or not exposure or not zoom or not gain:
                 print('BAD REQUEST')
                 self.send_response(400)
             controls = {
                 'Zoom': float(zoom),
-                'ExposureTime': float(exposure)
+                'ExposureTime': float(exposure),
+                'AnalogueGain': float(gain)
             }
-            SetupServerHandler.EXP = controls['ExposureTime']
+            SetupServerHandler.EXPOSURE_TIME = controls['ExposureTime']
             with open('/home/pi/timelapse_info_helper.json', 'w') as f:
                 logging.info(f'controls: {controls}')
                 data = json.dumps(controls)

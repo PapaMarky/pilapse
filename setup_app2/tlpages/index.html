@@ -11,14 +11,15 @@
 <img id="latest_img" width="900"  /><br/>
 <label id="img_label" class="right">Image Name</label><br/>
 <button onclick="update_image()">Get Latest</button><br/>
-<button onclick="singleshot()">Take Picture</button>
+<button onclick="singleshot()">Take Picture</button><hr/>
 <table>
-    <tr><td class="right"><label>Exposure Speed</label></td><td><input type="text" id="exposure_time" value="{{ exposure_time }}"/></td></tr>
-    <tr><td class="right"><label>Zoom</label></td><td><input type="text" id="zoom" value="1.0"</td></tr>
+    <tr><td class="right"><label>Exposure Time</label></td><td><input type="text" id="exposure_time" value="{{ exposure_time }}"/></td></tr>
+    <tr><td class="right"><label>Zoom</label></td><td><input type="text" id="zoom" value="{{ zoom }}"></td></tr>
+    <tr><td class="right"><label>Analog Gain</label></td><td><input type="text" value="{{ analog_gain }}" id="analog_gain"></td></tr>
 </table>
-<input type="checkbox" id="autoload" name="autoload" /><label>Auto Load Images</label><br/>
-<button onclick="set_exposure_time()">Update</button><br/>
+<button onclick="set_exposure_time()">Update</button> <input type="checkbox" id="locksettings"/><label>Lock Settings</label><br/>
 <hr/>
+<input type="checkbox" id="autoload" name="autoload" /><label>Auto Load Images</label><hr/>
 <table>
     <tr><th class="right">Hardware</th><td>{{ pi_model }}</td></tr>
     {% if camera_info %}

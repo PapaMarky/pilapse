@@ -78,7 +78,7 @@ def get_timelapse_pid():
     if os.path.exists(timelapse_info_path):
         with open(timelapse_info_path) as pidfile:
             content = pidfile.read()
-            print(f'PID: {content}')
+            print(f'INFO: {content}')
             data = json.loads(content)
     return data
 
@@ -107,15 +107,14 @@ if __name__ == '__main__':
     print(f'timelapse info: {timelapse_pid}')
     SetupServerHandler.PID = timelapse_pid['PID']
     SetupServerHandler.FRAME_DIR = timelapse_pid['Framedir']
+    SetupServerHandler.ANALOG_GAIN = timelapse_pid['AnalogueGain']
+    SetupServerHandler.ZOOM = timelapse_pid['Zoom']
+    SetupServerHandler.EXPOSURE_TIME = timelapse_pid['ExposureTime']
     event_handler = PidMonitorHandler()
     observer = Observer()
     observer.schedule(event_handler, path=timelapse_info_path, recursive=False)
     observer.start()
     controls = {}
-    with open('/home/pi/exposure.txt') as f:
-        data = json.load(f)
-        if 'ExposureTime' in data:
-            SetupServerHandler.EXP = int(data['ExposureTime'])
 
     logging.info(f'FRAME_DIR: {SetupServerHandler.FRAME_DIR}')
     server = WebServer(SetupServerHandler, port=config.port)

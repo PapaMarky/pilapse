@@ -1,7 +1,13 @@
 function set_exposure_time() {
     var exposure_time = document.getElementById("exposure_time").value,
         zoom = document.getElementById("zoom").value,
+        analog_gain = document.getElementById("analog_gain").value,
+        locked = document.getElementById("locksettings").checked,
         xhttp = new XMLHttpRequest();
+    if (locked) {
+        alert('Settings Are Locked');
+        return;
+    }
     console.log(exposure_time)
     document.getElementById("img_label").innerHTML = 'Loading...'
     xhttp.onreadystatechange = function() {
@@ -12,7 +18,7 @@ function set_exposure_time() {
            document.getElementById("img_label").innerHTML = xhttp.responseText
         }
     };
-    xhttp.open("GET", "set_exposure?exp=" + exposure_time + "&zoom=" + zoom, true);
+    xhttp.open("GET", "set_exposure?exp=" + exposure_time + "&zoom=" + zoom + "&gain=" + analog_gain, true);
     xhttp.send();
 }
 
