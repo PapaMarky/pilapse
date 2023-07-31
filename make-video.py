@@ -7,7 +7,7 @@ import sys
 import cv2
 from datetime import datetime
 
-from pilapse.darkframe import apply_darkframe
+from pilapse.darkframe import apply_darkframe, get_contours
 
 def parse_args():
     parser = argparse.ArgumentParser('Make a directory full of images into a video')
@@ -53,11 +53,13 @@ img1 = cv2.imread(filelist[0])
 
 height, width, _ = img1.shape
 print(f'Image Size: {width} x {height}')
+dark_contours = None
 if darkframe is not None:
     dh, dw, _ = darkframe.shape
     if dh != height or dw != width:
         print(f'Dark frame size must match input images.')
         sys.exit(1)
+    dark_contours, _ = get_contours(darkframe, threshold=config.threshold)
 
 img1 = None
 
@@ -90,8 +92,7 @@ for file in filelist:
         print(f'Could not load {file}')
         continue
     if darkframe is not None:
-        # img = cv2.subtract(img, darkframe)
-        img = apply_darkframe(img, darkframe, threshold=config.threshold)
+        img = apply_darkframe(img, dark_contours)
     video.write(img)
 
     count += 1
