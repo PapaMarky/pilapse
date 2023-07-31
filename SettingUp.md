@@ -10,42 +10,6 @@ Aperture f/2.8 or lower
 ### Max Resolutions for Cameras
 #### HQ Camera (imx477)
 
-<table>
-<tr><th>#</th><th>Size</th><th colspan=2>Exposure Limits</th><th colspan=4>Crop Limits</th></tr>
-<tr>
-<td rowspan=2>0</td>
-<td rowspan=2>1332 x 990</td>
-<td>31</td><td>667234896</td>
-<td rowspan=2>696</td><td rowspan=2>528</td><td rowspan=2>2664</td><td rowspan=2>1980</td>
-
-</tr>
-<tr><td>0.000031</td><td>667.23</td></tr>
-<tr>
-<td rowspan=2>1</td>
-<td rowspan=2>2028 x 1080</td>
-<td>60</td><td>674181621</td>
-<td rowspan=2>0</td><td rowspan=2>440</td><td rowspan=2>4056</td><td rowspan=2>2160</td>
-
-</tr>
-<tr><td>0.000060</td><td>674.18</td></tr>
-<tr>
-<td rowspan=2>2</td>
-<td rowspan=2>2028 x 1520</td>
-<td>60</td><td>674181621</td>
-<td rowspan=2>0</td><td rowspan=2>0</td><td rowspan=2>4056</td><td rowspan=2>3040</td>
-
-</tr>
-<tr><td>0.000060</td><td>674.18</td></tr>
-<tr>
-<td rowspan=2>3</td>
-<td rowspan=2>4056 x 3040</td>
-<td>114</td><td>694422939</td>
-<td rowspan=2>0</td><td rowspan=2>0</td><td rowspan=2>4056</td><td rowspan=2>3040</td>
-
-</tr>
-<tr><td>0.000114</td><td>694.42</td></tr>
-</table>
-
 Lenses:
 * 16mm 10MP Telephot: Focal length: 16mm, Aperture: F1.4–16
 * 6mm 3MP Wide Angle:
@@ -60,60 +24,12 @@ export HEIGHT=3040
 
 
 ##### V3-wide: imx708_wide
-| # | size       | exp. limits          | crop limits             |
-|---|------------|----------------------|-------------------------|
-| 0 | 1536x864   |        9 -  77193582 |   768   432  3072  1728 |
-|   |            | 0.000009 -     77.19 |                         |
-| 1 | 2304x1296  |       13 - 112015443 |     0     0  4608  2592 |
-|   |            | 0.000013 -    112.02 |                         |
-| 2 | 4608x2592  |       26 - 220417486 |     0     0  4608  2592 |
-|   |            | 0.000026 -    220.42 |                         |
-
-<table>
-<tr><th>#</th><th>Size</th><th colspan=2>Exposure Limits</th><th colspan=4>Crop Limits</th></tr>
-<tr>
-<td rowspan=2>0</td>
-<td rowspan=2>1536 x 864</td>
-<td>9</td><td>77193582</td>
-<td rowspan=2>768</td><td rowspan=2>432</td><td rowspan=2>3072</td><td rowspan=2>1728</td>
-
-</tr>
-<tr><td>0.000009</td><td>77.19</td></tr>
-<tr>
-<td rowspan=2>1</td>
-<td rowspan=2>2304 x 1296</td>
-<td>13</td><td>112015443</td>
-<td rowspan=2>0</td><td rowspan=2>0</td><td rowspan=2>4608</td><td rowspan=2>2592</td>
-
-</tr>
-<tr><td>0.000013</td><td>112.02</td></tr>
-<tr>
-<td rowspan=2>2</td>
-<td rowspan=2>4608 x 2592</td>
-<td>26</td><td>220417486</td>
-<td rowspan=2>0</td><td rowspan=2>0</td><td rowspan=2>4608</td><td rowspan=2>2592</td>
-
-</tr>
-<tr><td>0.000026</td><td>220.42</td></tr>
-</table>
-
-
 
 ```agsl
 export WIDTH=4608
 export HEIGHT=2592
 ```
 ##### V2 noir: imx219
-| #  | size       | exp. limits     | crop limits             |
-|----|------------|-----------------|-------------------------|
-| 0  | 640x480    |  75 -  11766829 |  1000   752  1280   960 |
-| 1  | 1640x1232  |  75 -  11766829 |     0     0  3280  2464 |
-| 2  | 1920x1080  |  75 -  11766829 |   680   692  1920  1080 |
-|  3 | 3280x2464  |  75 -  11766829 |     0     0  3280  2464 |
-| 4  | 640x480    |  75 -  11766829 |  1000   752  1280   960 |
-| 5  | 1640x1232  |  75 -  11766829 |     0     0  3280  2464 |
-| 6  | 1920x1080  |  75 -  11766829 |   680   692  1920  1080 |
-| 7  | 3280x2464  |  75 -  11766829 |     0     0  3280  2464 |
 ```agsl
 export WIDTH=3208
 export HEIGHT=2464
@@ -138,13 +54,7 @@ export HEIGHT=540
 ```
 Setup where you want the frames to go:
 ```
-export FRAMEDIR=$(date +'%Y%m%d-timelapse-'$(hostname))
-```
-```
 export FRAMEDIR=$(date +'%Y%m%d-night-'$(hostname))
-```
-```
-export FRAMEDIR=$(date +'%Y%m%d-TEST-'$(hostname))
 ```
 
 Open two terminal windows, use `screen -a` so the program isn't killed when
@@ -152,11 +62,19 @@ your laptop goes to sleep.
 
 ##### Setting Up
 ```
-picamera2_examples/timelapse_stills.py -W $WIDTH -H $HEIGHT --nr off --framerate 0.3 --framedir ../exposures/$FRAMEDIR
+export FRAMEDIR=$(date +'%Y%m%d-TEST-'$(hostname))
+```
+```
+picamera2_examples/timelapse_stills.py -W $WIDTH -H $HEIGHT --nr off --framerate 0.3 --framedir ../exposures/$FRAMEDIR --singleshot
 ```
 ##### Setup Helper
 ```
-setup_app2/timelapse_helper.py --port 8888 --framedir exposures/$FRAMEDIR
+setup_app2/timelapse_helper.py --port 8888
+```
+
+##### Create Dark Frames
+```
+export FRAMEDIR=$(date +'%Y%m%d-DARK-'$(hostname))
 ```
 
 ##### NightSky (15 seconds) ADD ZOOM
