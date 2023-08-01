@@ -1,5 +1,6 @@
 import logging
 import os
+import sys
 
 import cv2
 import imutils
@@ -68,6 +69,10 @@ class MotionData:
     def threshold_image(self, new_threshold:FileImage):
         self._threshold_image = new_threshold
 
+    @property
+    def motion_image(self):
+        return self._motion_image
+
 class MotionDetector:
     def __init__(self,
                  outdir:str,
@@ -93,6 +98,7 @@ class MotionDetector:
         self.blur_size = blur_size
         self.debug = debug
         self.show_motion = show_motion
+        self.shrinkto = None
 
     def compare_images(self, previous_image:Image, current_image:Image):
         fname_base = current_image.base_filename
@@ -113,7 +119,8 @@ class MotionDetector:
                 path = os.path.join(self.outdir, blur_name)
                 logging.info(f'Adding {path} to motion data')
                 motion_data.diff_image = FileImage(path, image=new_image)
-
+        else:
+            new_image = image_in
         scale = 1.0
         if self.shrinkto is not None:
             scale  = height / self.shrinkto
@@ -121,10 +128,12 @@ class MotionDetector:
             new_image = imutils.resize(new_image.copy(), height = self.shrinkto)
 
         sMindiff = int(self.mindiff / scale)
-        sLeft = int(self.left / scale)
-        sRight = int(self.right / scale)
-        sTop = int(self.top / scale)
-        sBottom = int(self.bottom / scale)
+        sLeft = int(self.left * width / scale)
+        sRight = int(self.right * width / scale)
+        sTop = int(self.top * height / scale)
+        sBottom = int(self.bottom * height / scale)
+        # print(f'{self.left}, {self.right}, {self.top}, {self.bottom}')
+        # print(f'{sLeft}, {sRight}, {sTop}, {sBottom} : {sMindiff}')
 
         diff = previous_image.copy()
         cv2.absdiff(previous_image, new_image, diff)
@@ -151,10 +160,10 @@ class MotionDetector:
         #increasing the size of differences so we can capture them all
         #for i in range(0, 3):
         dilated = gray.copy()
-        #for i in range(0, 3):
-        #    dilated = cv2.dilate(dilated, None, iterations= i+ 1)
+        for i in range(0, 3):
+            dilated = cv2.dilate(dilated, None, iterations= i+ 1)
 
-        dilated = cv2.dilate(dilated, None, iterations= self.dilation)
+        # dilated = cv2.dilate(dilated, None, iterations= self.dilation)
         # 03 - dilated
         if self.save_diffs:
             dilated2 = dilated.copy()
@@ -193,8 +202,8 @@ class MotionDetector:
             return copy
 
         height, width, _ = new_image.shape
+        copy = get_copy(image_in)
         if self.debug:
-            copy = get_copy(image_in)
             cv2.rectangle(image_in, (sLeft, sTop), (sRight, sBottom), colors.RED)
         for c in cnts:
             # fit a bounding box to the contour
@@ -203,30 +212,35 @@ class MotionDetector:
             sy = int(scale * y)
             sw = int(scale * w)
             sh = int(scale * h)
-
-            if x + w > sRight:
+            # print(f'({sx}, {sy}) ({sw} x {sh}) R:{sRight}, L:{sLeft}, T:{sTop}, B:{sBottom}')
+            if x + w > sRight and self.right < 1.0:
                 if self.debug:
+                    copy = get_copy(copy)
                     cv2.rectangle(copy, (sx, sy), (sx + sw, sy + sh), colors.CYAN)
                 continue
             if x < sLeft:
                 if self.debug:
+                    copy = get_copy(copy)
                     cv2.rectangle(copy, (sx, sy), (sx + sw, sy + sh), colors.CYAN)
                 continue
             if y < sTop:
                 if self.debug:
+                    copy = get_copy(copy)
                     cv2.rectangle(copy, (sx, sy), (sx + sw, sy + sh), colors.CYAN)
                 continue
-            if y + h > sBottom:
+            if self.right < 1.0 and y + h > sBottom:
                 if self.debug:
+                    copy = get_copy(copy)
                     cv2.rectangle(copy, (sx, sy), (sx + sw, sy + sh), colors.CYAN)
                 continue
-            if (w >= sMindiff or h >= sMindiff) and w < width and h < height:
+            if (w >= sMindiff or h >= sMindiff) and w <= width and h <= height:
                 copy = get_copy(copy)
                 if self.debug or self.show_motion:
                     cv2.rectangle(copy, (sx, sy), (sx + sw, sy + sh), colors.GREEN)
                 motion_data.motion_detected = True
             else:
                 if self.debug:
+                    # print(f'w: {w} h: {h} mindiff: {sMindiff} width: {width} height: {height}')
                     copy = get_copy(copy)
                     cv2.rectangle(copy, (sx, sy), (sx + sw, sy + sh), colors.MAGENTA)
 
