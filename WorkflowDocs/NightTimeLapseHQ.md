@@ -1,6 +1,7 @@
 # Setting Up for Night Timelapse
 
 ## Prep
+Things to do before heading out to dark places.
 * Power supply
 * ethernet cable
 * tripod
@@ -36,6 +37,8 @@ setup_app2/timelapse_helper.py --port 8888
 ## Make Dark Frame
 ```
 export FRAMEDIR=$(date +'%Y%m%d-DARK-'$(hostname))
+export WIDTH=4056
+export HEIGHT=3040
 ```
 * Cover Lens (lens cap + box)
 
