@@ -112,7 +112,7 @@ def detect_stuff(filelist, window_name):
                 shown_image = motion_data.motion_image
             cv2.imshow(window_name, shown_image)
             raw_key = cv2.waitKey(wait)
-            key = chr(raw_key)
+            key = chr(raw_key & 0xFF)
             if key == 'q':
                 break
             if key == '?':
