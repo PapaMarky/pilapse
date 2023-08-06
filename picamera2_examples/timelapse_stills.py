@@ -400,7 +400,17 @@ def write_notes(timelapse_info, type='START'):
     with open(notesfile_path, 'a') as notes:
         notes.write(f'\n--- {type}: {datetime.now()} ---\n')
         notes.write(json.dumps(info, indent=4))
-        notes.write('\n-----------\n')
+        notes.write('\n--- VARS ---\n')
+        notes.write(f'export WIDTH={args.width}\n')
+        notes.write(f'export HEIGHT={args.height}\n')
+        if args.stop_at is not None:
+            notes.write(f'export STOP_AT={args.stop_at}\n')
+        notes.write(f'export ZOOM={args.zoom}\n')
+        notes.write(f'export GAIN={timelapse_info["AnalogueGain"]}\n')
+        notes.write(f'export EXPOSURE_TIME={timelapse_info["ExposureTime"]}\n')
+        notes.write(f'export FRAMERATE={timelapse_info["FrameRate"]}\n')
+        notes.write(f'# export FRAMEDIR=XXX')
+        notes.write('\n------------\n')
 
 notesfile = ''
 if args.notes:
