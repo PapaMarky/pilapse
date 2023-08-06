@@ -17,28 +17,63 @@ cd ~/pilapse
 ./TimeSync.py --user pi --password $PASSWORD --host picam004.local 
 ```
 ```shell
+screen -a
+```
+### HQ
+```shell
+export FRAMEDIR=$(date +'%Y%m%d-TEST-'$(hostname))
+export WIDTH=4056
+export HEIGHT=3040
+export STOP_AT=5:30:00
+export ZOOM=1.0
+export GAIN=1.0
+```
+```shell
+# Low res
 export FRAMEDIR=$(date +'%Y%m%d-TEST-'$(hostname))
 export WIDTH=2028
 export HEIGHT=1080
+export STOP_AT=5:30:00
+export ZOOM=1.0
+export GAIN=1.0
+```
+### V3 wide
+```shell
+export FRAMEDIR=$(date +'%Y%m%d-TEST-'$(hostname))
+export WIDTH=4608
+export HEIGHT=2592
+export STOP_AT=5:30:00
+export ZOOM=1.0
+export GAIN=1.0
 ```
 ```shell
-picamera2_examples/timelapse_stills.py -W $WIDTH -H $HEIGHT --iso 1.0 --nr best --framedir ../exposures/$FRAMEDIR --singleshot --framerate 0.3
+# low res
+export FRAMEDIR=$(date +'%Y%m%d-TEST-'$(hostname))
+export WIDTH=2304
+export HEIGHT=1296
+export STOP_AT=5:30:00
+export ZOOM=1.0
+export GAIN=1.0
+```
+```shell
+picamera2_examples/timelapse_stills.py --zoom $ZOOM -W $WIDTH -H $HEIGHT --nr best --framedir ../exposures/$FRAMEDIR --analog-gain $GAIN --singleshot --notes
 ```
 ```shell
 setup_app2/timelapse_helper.py --port 8888
 ```
-* Choose Zoom
-
-`export ZOOM=xxx`
 
 ## Focus on Stars / Choose Exposure
 * wait until fully dark
 
+## UPDATE `ZOOM` and `GAIN` variables
 ## Make Dark Frame
+### HQ
 ```
 export FRAMEDIR=$(date +'%Y%m%d-DARK-'$(hostname))
-export WIDTH=4056
-export HEIGHT=3040
+```
+### V3 wide
+```
+export FRAMEDIR=$(date +'%Y%m%d-DARK-'$(hostname))
 ```
 * Cover Lens (lens cap + box)
 
@@ -69,9 +104,14 @@ export FRAMERATE=0.05
 export EXPOSURE_TIME=25000000
 export FRAMERATE=0.04
 ```
-
+### 30 seconds
 ```shell
-picamera2_examples/timelapse_stills.py -W $WIDTH -H $HEIGHT --iso 1.0 --nr best --framedir ../exposures/$FRAMEDIR --framerate $FRAMERATE --exposure-time $EXPOSURE_TIME --zoom $ZOOM
+export EXPOSURE_TIME=30000000
+export FRAMERATE=0.033333333333333
+```
+## Start DarkFrame
+```shell
+picamera2_examples/timelapse_stills.py -W $WIDTH -H $HEIGHT --analog-gain $GAIN --nr best --framedir ../exposures/$FRAMEDIR --framerate $FRAMERATE --exposure-time $EXPOSURE_TIME --zoom $ZOOM --notes
 ```
 
 ## Start Timelapse
@@ -79,17 +119,12 @@ picamera2_examples/timelapse_stills.py -W $WIDTH -H $HEIGHT --iso 1.0 --nr best 
 ```shell
 screen -a
 ```
-```
+```shell
 export FRAMEDIR=$(date +'%Y%m%d-nightsky-'$(hostname))
-```
-* set _stop-at_ time
-
-```
-export STOP_AT=5:30:00
 ```
 
 ```shell
-picamera2_examples/timelapse_stills.py -W $WIDTH -H $HEIGHT --nr best --framedir ../exposures/$FRAMEDIR --stop-at $STOP_AT --poweroff --framerate $FRAMERATE --exposure-time $EXPOSURE_TIME --zoom $ZOOM
+picamera2_examples/timelapse_stills.py -W $WIDTH -H $HEIGHT --analog-gain $GAIN --nr best --framedir ../exposures/$FRAMEDIR --stop-at $STOP_AT --poweroff --notes --framerate $FRAMERATE --exposure-time $EXPOSURE_TIME --zoom $ZOOM
 ```
 
 # Appendix 
