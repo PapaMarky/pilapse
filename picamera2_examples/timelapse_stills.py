@@ -10,6 +10,8 @@ import time
 
 import picamera2
 from picamera2 import Picamera2
+
+
 Picamera2.set_logging(Picamera2.WARNING)
 os.environ['LIBCAMERA_LOG_LEVELS'] = 'ERROR'
 from libcamera import Transform
@@ -17,6 +19,7 @@ import libcamera
 
 from datetime import datetime, timedelta
 import argparse
+
 def get_program_name():
     name = os.path.basename(sys.argv[0])
     s = name.split('.')
@@ -102,8 +105,6 @@ parser.add_argument('--framedir', type=str, default=frame_path,
                     help='Path to directory where frames will be stored')
 parser.add_argument('--framerate', type=float, default=1.0,
                     help='Frame rate of camera')
-parser.add_argument('--calc-framerate', action='store_true',
-                    help='When exposure time is changed via signal, make the framerate match')
 parser.add_argument('--exposure-time', type=int,
                     help='how long to expose each frame')
 parser.add_argument('--width', '-W', type=int, default=1920,
@@ -133,6 +134,9 @@ parser.add_argument('--analog-gain', type=float,
                     help='Set the AnalogueGain. Default: None (let the camera decide). '
                          'Kind of sets the "ISO" (ISO / 100.0 = Analogue Gain). Run '
                          'get_sensor_modes.py to find the limits for the camera. Limits are silently enforced.')
+parser.add_argument('--notes', action='store_true',
+                    help='Create a "notes" file with information about Raspberry Pi and Camera info as well as '
+                         'timelapse settings. Will append if file exists.')
 args = parser.parse_args()
 
 timelapse_info = dict(PID=os.getpid())
@@ -179,8 +183,7 @@ def exit_gracefully(signum, frame):
     TIME_TO_STOP = True
     logging.info(f'{get_program_name()} SHUTTING DOWN due to {signal.Signals(signum).name}')
 
-def do_update_exposure(picam2):
-    global SET_EXPOSURE
+def do_update_exposure(picam2, timelapse_info):
     logging.info(f'Setting controls from {timelapse_info_path_helper}')
     if os.path.exists(timelapse_info_path_helper):
         controls = {}
@@ -196,6 +199,8 @@ def do_update_exposure(picam2):
                 controls["AeEnable"] = False
                 controls["AwbEnable"] =  False
                 logging.info(f'New settings: Exposure time: {data["ExposureTime"]}, FPS: {fps}')
+                timelapse_info['ExposureTime'] = data['ExposureTime']
+                timelapse_info['FrameRate'] = fps
             if 'Zoom' in data:
                 x, y, w, h = original_scaler_crop
                 new_w = w/data['Zoom']
@@ -203,12 +208,13 @@ def do_update_exposure(picam2):
                 new_x = x + w/2 - new_w/2
                 new_y = y + h/2 - new_h/2
                 controls['ScalerCrop'] = (int(new_x), int(new_y), int(new_w), int(new_h))
+                timelapse_info['Zoom'] = data['Zoom']
             if 'AnalogueGain' in data:
                 controls['AnalogueGain'] = float(data['AnalogueGain'])
+                timelapse_info['AnalogueGain'] = controls['AnalogueGain']
 
             picam2.set_controls(controls)
             logging.info(f'Setting Controls: {controls}')
-    SET_EXPOSURE = False
 
 def update_exposure(signum, frame):
     global SET_EXPOSURE
@@ -255,7 +261,7 @@ picam2.configure(camera_config)
 
 # Give time for Aec and Awb to settle, before disabling them
 time.sleep(3)
-logging.info(f'Setting Framerate: {args.framerate}')
+logging.info(f'Setting FrameRate: {args.framerate}')
 controls = {"FrameRate": args.framerate}
 
 logging.info(f'Setting exposure time to {args.exposure_time}')
@@ -295,6 +301,9 @@ if args.exposure_time is None:
     if metadata is None:
         metadata = picam2.capture_metadata()
     timelapse_info['ExposureTime'] = metadata['ExposureTime']
+
+if args.framerate is not None:
+    timelapse_info['FrameRate'] = args.framerate
 
 if args.analog_gain is not None:
     controls['AnalogueGain'] = args.analog_gain
@@ -357,6 +366,54 @@ logging.info(f'Saving frames in {frame_path}')
 os.makedirs(frame_path, exist_ok=True)
 start_time = datetime.now()
 i = 0
+
+def make_commandline(timelapse_info):
+    cmdline = f'{sys.argv[0]} --framedir {timelapse_info["Framedir"]} --framerate {timelapse_info["FrameRate"]} ' \
+              f'--exposure-time {timelapse_info["ExposureTime"]} --width {args.width} --height {args.height} ' \
+              f'--zoom {timelapse_info["Zoom"]} --analog-gain {timelapse_info["AnalogueGain"]}'
+    if args.flip:
+        cmdline += ' --flip'
+    if args.stop_at is not None:
+        cmdline += f' --stop-at {args.stop_at}'
+    if args.poweroff:
+        cmdline += f' --poweroff'
+    if args.singleshot:
+        cmdline += f' --singleshot'
+    if args.nr is not None:
+        cmdline += f' --nr {args.nr}'
+    if args.notes:
+        cmdline += f' --notes'
+    return cmdline
+
+def write_notes(timelapse_info, type='START'):
+    info = timelapse_info.copy()
+    # TODO Cache these
+    info['Hostname'] = platform.node()
+    info['Pi Model'] = pi_model
+    info['CameraModel'] = get_camera_model(picam2)
+    if type == 'START':
+        info['CmdLine'] = ' '.join(sys.argv)
+    else:
+        info['CmdLineOriginal'] = ' '.join(sys.argv)
+        info['CmdLine'] = make_commandline(timelapse_info)
+
+    with open(notesfile_path, 'a') as notes:
+        notes.write(f'\n--- {type}: {datetime.now()} ---\n')
+        notes.write(json.dumps(info, indent=4))
+        notes.write('\n-----------\n')
+
+notesfile = ''
+if args.notes:
+    with open('/proc/device-tree/model') as f:
+        pi_model:str = f.read()
+        if pi_model.endswith('\x00'):
+            pi_model = pi_model[:-1]
+    notesfile = f'{os.path.basename(frame_path)}-notes.txt'
+    notesfile_path = os.path.join(os.path.dirname(timelapse_info['Framedir']), notesfile)
+    logging.info(f'NotesFile: {notesfile_path}')
+
+    write_notes(timelapse_info)
+
 logging.info(f'READY FOR HELPER')
 while True:
     now = datetime.now()
@@ -382,7 +439,10 @@ while True:
         break
 
     if SET_EXPOSURE:
-        do_update_exposure(picam2)
+        do_update_exposure(picam2, timelapse_info)
+        if args.notes:
+            write_notes(timelapse_info, 'UPDATE')
+        SET_EXPOSURE = False
 
 logging.info(f'Shutting down camera')
 picam2.stop()
