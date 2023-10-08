@@ -190,7 +190,7 @@ class Suntime:
             logging.info(f'data: {data}')
             if 'results' in data:
                 d = data['results']
-                d['today'] = date.today()
+                d['today'] = datetime.strptime(self.date, '%Y-%m-%d')
                 oneday = timedelta(days=1)
                 d['tomorrow'] = date.today() + oneday
                 d['yesterday'] = date.today() - oneday
