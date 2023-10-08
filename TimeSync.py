@@ -5,7 +5,7 @@ from datetime import datetime
 def time_sync_remote_system(address:str, user:str, password:str, check_only:bool=False):
     client = SSHClient()
     client.load_system_host_keys()
-    client.connect(address, username=user)
+    client.connect(address, username=user, password=password)
 
     now = datetime.now()
     _, out, err = client.exec_command('date +"%Y %m %d %H %M %S %N"')
