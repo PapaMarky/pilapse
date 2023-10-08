@@ -109,6 +109,11 @@ export FRAMERATE=0.04
 export EXPOSURE_TIME=30000000
 export FRAMERATE=0.033333333333333
 ```
+### 60 seconds
+```shell
+export EXPOSURE_TIME=60000000
+export FRAMERATE=0.016666666666667
+```
 ## Start DarkFrame
 ```shell
 picamera2_examples/timelapse_stills.py -W $WIDTH -H $HEIGHT --analog-gain $GAIN --nr best --framedir ../exposures/$FRAMEDIR --framerate $FRAMERATE --exposure-time $EXPOSURE_TIME --zoom $ZOOM --notes
