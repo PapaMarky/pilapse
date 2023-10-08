@@ -43,6 +43,8 @@ def parse_arguments():
                         help='Height of image')
     parser.add_argument('--exposure-time', type=int,
                         help='Use fixed exposure time instead of auto exposure')
+    parser.add_argument('--zoom', type=float,
+                        help='Zoom')
     parser.add_argument('--html', type=str, default='html')
     return parser.parse_args()
 
@@ -111,6 +113,23 @@ if __name__ == '__main__':
     video_config = picam2.create_video_configuration(main={"size": (config.width, config.height)},
                                                      transform=transform)
     controls = video_config['controls']
+    if config.zoom > 1.0:
+        picam2.start()
+        metadata = picam2.capture_metadata()
+        print(f'METADATA: {metadata}')
+
+        original_scaler_crop = metadata['ScalerCrop']
+        zoom = config.zoom
+        print(f'Setting Zoom to {zoom}')
+        x, y, w, h = original_scaler_crop
+        new_w = w/zoom
+        new_h = h/zoom
+        new_x = x + w/2 - new_w/2
+        new_y = y + h/2 - new_h/2
+        controls['ScalerCrop'] = (int(new_x), int(new_y), int(new_w), int(new_h))
+        time.sleep(1.0)
+        print(f'Zoomed ScalerCrop: {picam2.capture_metadata()["ScalerCrop"]}')
+        picam2.stop()
     logging.debug(f'VIDEO CONTROLS: {video_config}')
     picam2.configure(video_config)
 
@@ -140,6 +159,7 @@ if __name__ == '__main__':
     logging.debug(f'METADATA: {picam2.capture_metadata()}')
 
     try:
+        logging.info('Starting WebServer')
         server = WebServer(picam2, SetupServerHandler, port=config.port)
         server.serve_forever(poll_interval=0.5)
     except KeyboardInterrupt as k:
