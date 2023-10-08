@@ -11,6 +11,8 @@ from http import server
 from threading import Condition
 
 from picamera2 import Picamera2
+Picamera2.set_logging(Picamera2.WARNING)
+os.environ['LIBCAMERA_LOG_LEVELS'] = 'ERROR'
 from picamera2.encoders import MJPEGEncoder
 from picamera2.outputs import FileOutput
 from libcamera import Transform
