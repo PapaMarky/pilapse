@@ -407,7 +407,7 @@ def write_notes(timelapse_info, type='START'):
             notes.write(f'export STOP_AT={args.stop_at}\n')
         notes.write(f'export ZOOM={args.zoom}\n')
         notes.write(f'export GAIN={timelapse_info["AnalogueGain"]}\n')
-        notes.write(f'export EXPOSURE_TIME={timelapse_info["ExposureTime"]}\n')
+        notes.write(f'export EXPOSURE_TIME={int(timelapse_info["ExposureTime"])}\n')
         notes.write(f'export FRAMERATE={timelapse_info["FrameRate"]}\n')
         notes.write(f'# export FRAMEDIR=XXX')
         notes.write('\n------------\n')
@@ -425,6 +425,10 @@ if args.notes:
     write_notes(timelapse_info)
 
 logging.info(f'READY FOR HELPER')
+if args.singleshot:
+    logging.info('Singleshot Mode')
+else:
+    logging.info('Continuous Mode')
 while True:
     now = datetime.now()
     if stop_at is not None and now >= stop_at:
