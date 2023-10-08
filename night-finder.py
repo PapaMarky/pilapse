@@ -35,7 +35,8 @@ commands = {
     'BACK_ARROW': 'Go back one frame. (Pauses)',
     'o': 'Open the image in preview',
     'd': 'Toggle debug mode (show rects of all "movement")',
-    'm': 'Toggle show motion (show rects of "movement" that match criteria'
+    'm': 'Toggle show motion (show rects of "movement" that match criteria',
+    'n': 'add a NOTE to notes file'
 }
 
 def show_help():
@@ -43,7 +44,62 @@ def show_help():
     for cmd in commands:
         print(f"'{cmd}' : {commands[cmd]}")
 
-def detect_stuff(filelist, window_name):
+def get_note_type():
+    type = '0'
+    typemap = {
+        '1': 'Meteor',
+        '2': 'Airplane',
+        '3': 'Satellite',
+        '4': 'Continuation',
+        '5': 'Other',
+        '6': 'Cancel'
+    }
+    while not type in typemap:
+        prompt = f'Note Type:'
+        for t in typemap:
+            prompt += f' {t}) {typemap[t]}'
+        print(prompt)
+        type = input(f'Enter type: ')
+        if type not in typemap:
+            print(f'Please choose from list.')
+
+    return typemap[type]
+
+def get_notes_file(image:FileImage, args):
+    if args.note_file:
+        return args.note_file
+    directory = os.path.dirname(image.filepath)
+    base_name = os.path.basename(directory) + '-notes.txt'
+
+    print(f' DIR: {directory}')
+    print(f'FILE: {base_name}')
+    return os.path.join(directory, base_name)
+
+def add_note(image, args):
+    notes_file = get_notes_file(image, args)
+    type = get_note_type()
+    if type == 'Cancel':
+        return
+    description = input('Enter Description: ')
+    print(f'IMAGE: {image.filename} ({image.filepath}')
+    print(f'TYPE: {type}')
+    print(f'DESC: {description}')
+
+    mode = 'a' if os.path.exists(notes_file) else 'w'
+    sep = '- '
+    t = type
+    if type == 'Continuation':
+        sep = '  '
+        t = ''
+    if description != '' and type != 'Continuation':
+        description = ': ' + description
+
+    print(f'MODE: {mode}')
+
+    with open(notes_file, mode) as notes:
+        notes.write(f'{image.filename} {sep}{t}{description}\n')
+
+def detect_stuff(filelist, window_name, args):
     MINDIFF = int(os.environ.get('MINDIFF', 500))
     THRESHOLD = int(os.environ.get('THRESHOLD', 5))
     DILATION = int(os.environ.get('DILATION', 3))
@@ -68,7 +124,7 @@ def detect_stuff(filelist, window_name):
     direction = 1 # set to -1 to play frames backwards
     cv2.imshow(window_name, cv2.imread(filelist[0]))
     def handle_mindiff_slider(new_mindiff):
-        print(f'new mindiff: {new_mindiff}')
+        # print(f'new mindiff: {new_mindiff}')
         md.mindiff = new_mindiff
     def handle_threshold_slider(new_threshold):
         md.threshold = new_threshold
@@ -117,6 +173,15 @@ def detect_stuff(filelist, window_name):
                 break
             if key == '?':
                 show_help()
+                continue
+            elif key == '<':
+                i = 0
+                current_image = None
+                previous_image = None
+                continue
+            elif key == 'n':
+                paused = True
+                add_note(current_image, args)
                 continue
             elif key == '-': # show diffs
                 show_diff = not show_diff
@@ -207,6 +272,7 @@ def detect_stuff2(filelist, window_name):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser('Find interesting things in nightsky timelapse')
     parser.add_argument('--type', type=str, help='type of image files (default: "jpg")', default='jpg')
+    parser.add_argument('--note-file', type=str, help='Path of notes file.')
     parser.add_argument('imgdir', type=str, help='Directory containing images')
     args = parser.parse_args()
     IMAGE_DIR = args.imgdir
@@ -214,7 +280,7 @@ if __name__ == '__main__':
     filelist = glob.glob(os.path.join(IMAGE_DIR, f'*.{args.type}') )
     filelist.sort()
     window_name = f'Press Any Key to Close ("?" for help)'
-    detect_stuff(filelist, window_name)
+    detect_stuff(filelist, window_name, args)
     cv2.namedWindow(window_name, cv2.WINDOW_NORMAL | cv2.WINDOW_KEEPRATIO | cv2.WINDOW_GUI_EXPANDED)
     cv2.destroyAllWindows()
 
