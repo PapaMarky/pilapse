@@ -155,7 +155,7 @@ def detect_stuff(filelist, window_name, args):
                 print(f'{i} : {dir} : {file}')
                 i += direction
                 break
-            if motion_data.motion_detected:
+            if motion_data._motion_detected:
                 #print(f'Motion detected, Pausing...')
                 paused = True
             if paused:

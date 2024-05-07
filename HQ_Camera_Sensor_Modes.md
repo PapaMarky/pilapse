@@ -41,12 +41,13 @@
 <tr><td>AfMode</td><td colspan="3">Not Available</td></tr>
 <tr><td>LensPosition</td><td colspan="3">Not Available</td></tr>
 <tr><td>AeEnable</td><td>False</td><td>True</td><td>None</td></tr>
-<tr><td>AeExposureMode</td><td>AeExposureModeEnum.Normal</td><td>AeExposureModeEnum.Custom</td><td>AeExposureModeEnum.Normal</td></tr>
+<tr><td>AeExposureMode</td><td>AeExposureModeEnum.Normal</td><td>AeExposureModeEnum.Custom *</td><td>AeExposureModeEnum.Normal</td></tr>
 <tr><td>AeConstraintMode</td><td>AeConstraintModeEnum.Normal</td><td>AeConstraintModeEnum.Custom</td><td>AeConstraintModeEnum.Normal</td></tr>
 <tr><td>AwbEnable</td><td>False</td><td>True</td><td>None</td></tr>
 <tr><td>AwbMode</td><td>AwbModeEnum.Auto</td><td>AwbModeEnum.Custom</td><td>AwbModeEnum.Auto</td></tr>
 <tr><td>AnalogueGain</td><td>1.0</td><td>22.2608699798584</td><td>None</td></tr>
 </table>
+* <a href="https://docs.google.com/spreadsheets/d/1cXzNoYFv1LZ3sZDgmQqybG2FHg8_APGk9uwHwIdpiM0/edit?usp=sharing">Custom Exposure Mode Helper</a>
 
 # V3 Wide NoIR Camera (same as V3 Wide)
 <h2>Camera Model: imx708_wide_noir</h2>
@@ -83,9 +84,10 @@
 <tr><td>AfMode</td><td>AfModeEnum.Manual</td><td>AfModeEnum.Continuous</td><td>AfModeEnum.Manual</td></tr>
 <tr><td>LensPosition</td><td>0.0</td><td>32.0</td><td>1.0</td></tr>
 <tr><td>AeEnable</td><td>False</td><td>True</td><td>None</td></tr>
-<tr><td>AeExposureMode</td><td>AeExposureModeEnum.Normal</td><td>AeExposureModeEnum.Custom</td><td>AeExposureModeEnum.Normal</td></tr>
+<tr><td>AeExposureMode</td><td>AeExposureModeEnum.Normal</td><td>AeExposureModeEnum.Custom *</td><td>AeExposureModeEnum.Normal</td></tr>
 <tr><td>AeConstraintMode</td><td>AeConstraintModeEnum.Normal</td><td>AeConstraintModeEnum.Custom</td><td>AeConstraintModeEnum.Normal</td></tr>
 <tr><td>AwbEnable</td><td>False</td><td>True</td><td>None</td></tr>
 <tr><td>AwbMode</td><td>AwbModeEnum.Auto</td><td>AwbModeEnum.Custom</td><td>AwbModeEnum.Auto</td></tr>
 <tr><td>AnalogueGain</td><td>1.0</td><td>16.0</td><td>None</td></tr>
 </table>
+* <a href="https://docs.google.com/spreadsheets/d/1cXzNoYFv1LZ3sZDgmQqybG2FHg8_APGk9uwHwIdpiM0/edit?usp=sharing">Custom Exposure Mode Helper</a>

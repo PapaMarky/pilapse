@@ -1,4 +1,5 @@
 import argparse
+import re
 from datetime import datetime
 from datetime import timedelta
 import glob
@@ -22,6 +23,14 @@ def convert_file(video_in, outtype):
     outfile = os.path.splitext(video_in)[0] + f'.{outtype}'
     print(f'converting: {video_in}')
     print(f'    output: {outfile}')
+
+    if config.fps is None:
+        print(f'FPS not specified, checking filename')
+        m = re.match(r'.*-([\d\.]+)fps\..*', video_in)
+        if m:
+            config.fps = float(m.group(1))
+            print(f'FPS detected in filename: {config.fps}')
+
 
     video_cap = cv2.VideoCapture(video_in)
     frame_width = int(video_cap.get(cv2.CAP_PROP_FRAME_WIDTH))
@@ -74,6 +83,12 @@ if __name__ == '__main__':
     if config.all:
         glob_path = video_in + f'/*.{config.intype}'
         video_list = glob.glob(glob_path)
+        discard_in = os.path.join(video_in, 'discards')
+        if os.path.exists(discard_in):
+            print(f'Adding files in {discard_in}')
+            glob_path = discard_in + f'/*.{config.intype}'
+            video_list += glob.glob(glob_path)
+
         video_list.sort()
     else:
         video_list.append(config.video_in)

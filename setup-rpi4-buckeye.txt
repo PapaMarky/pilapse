@@ -4,7 +4,7 @@ https://www.thegeekstuff.com/2008/11/3-steps-to-perform-ssh-login-without-passwo
 
 ## From MacBook:
 ssh-keygen
-ssh-copy-id -i ~/.ssh/id_rpi.pub pi@picam002.local
+
 
 * add new pi to ~/.ssh/config
 

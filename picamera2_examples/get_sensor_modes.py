@@ -29,14 +29,18 @@ def generate_ascii_table(modes, model):
     for mode in modes:
         size = f'{mode["size"][0]}x{mode["size"][1]}'
         el = mode['exposure_limits']
-        elimits = f'{el[0]:8} - {el[1]:9}'
+        elimits = f'{el[0]:8} - {el[1]}'
         cl = mode['crop_limits']
         crop_limits = f'{cl[0]:5} {cl[1]:5} {cl[2]:5} {cl[3]:5}'
         print(f'|{n:2} | {size:10} | {elimits} | {crop_limits} |')
         crop_limits = f'{" ":5} {" ":5} {" ":5} {" ":5}'
         e1 = int(el[0])/1000000
-        e2 = int(el[1])/1000000
-        elimits2 = f'{e1:4.6f} - {e2:9.2f}'
+        el2_1 = el[1]
+        if isinstance(el2_1, float):
+            el2_1 = int(el2_1) / 1000000
+        else:
+            el2_1 = '???'
+        elimits2 = f'{e1:4.6f} - {el2_1}'
         print(f'|   | {" ":10} | {elimits2} | {crop_limits} |')
 
         n += 1
