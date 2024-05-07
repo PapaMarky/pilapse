@@ -330,7 +330,7 @@ logging.info(f'METADATA: {metadata}')
 if 'AfMode' in picam2.camera_controls:
     # TODO: should we only do this if ExposureTime is set and more than one second?
     logging.info(f'Turning off auto focus')
-    picam2.set_controls({'AfMode': libcamera.controls.AfModeEnum.Manual})
+    picam2.set_controls({'AfMode': libcamera.controls.AfModeEnum.Manual, "LensPosition": 0.0})
 
 def capture_image():
     r = picam2.capture_request()
