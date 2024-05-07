@@ -21,7 +21,7 @@ import libcamera
 
 from collections import deque
 
-
+N = 1.5
 class RingBuffer(object):
     """ class that implements a not-yet-full buffer """
     def __init__(self, size_max):
@@ -31,9 +31,20 @@ class RingBuffer(object):
         self._total = 0
         self.average = None
         self._is_full = False
+        self._motion_detected = False
+
+    @property
+    def motion_detected(self):
+        return self._motion_detected
 
     def append_full(self, x):
         """ Append an element overwriting the oldest one. """
+        # If the new value is significantly bigger than the average, feed the average into the ring buffer so
+        # that the average is not affected by the spikes.
+        self._motion_detected = (x >= self.average * N)
+        if self._motion_detected:
+            x = self.average
+
         old_x = self.data[self.cur]
         self._total += x - old_x
         self.data[self.cur] = x
@@ -74,14 +85,22 @@ def get_program_name():
         name = '.'.join(s[:-1])
     return name
 
+
+# h264 supported resolutions
+'''
+854 x 480 (16:9 480p)
+1280 x 720 (16:9 720p)
+1920 x 1080 (16:9 1080p)
+640 x 480 (4:3 480p)
+1280 x 1024 (5:4)
+1920 x 1440 (4:3)
+'''
 width = 1920
 height = 1080
 GREEN = (0, 255, 0)
 BLUE = (255, 0, 0)
 RED = (0, 0, 255)
 YELLOW = (0, 255, 255)
-top_origin_1 = (30, 60)
-top_origin_2 = (30, 120)
 font = cv2.FONT_HERSHEY_SIMPLEX
 scale = 1
 thickness = 2
@@ -89,14 +108,15 @@ thickness = 2
 radius = 15
 origin_red_dot = (width - radius * 2, radius * 2)
 origin_blue_dot = (width - int(radius * 4.5), radius * 2)
+origin_green_dot = (width - int(radius * 7), radius * 2)
 
 
 parser = argparse.ArgumentParser('Simple video motion capture based on Picamera2')
 parser.add_argument('--exposure', type=int,
                     help='force the exposure speed (Microseconds). If fps frequent, it will be reduced')
-parser.add_argument('--fps', type=float, default=30,
+parser.add_argument('--fps', type=int, default=30,
                     help='output video frames per second. If this is too high for the requested exposure time, '
-                         'fps will be reduced. Default: 30.')
+                         'fps will be reduced. Default: 30. Faster values impact the motion detection algorithm')
 parser.add_argument('--seconds', type=float, help='Number of seconds in circular buffer (default: 5)', default=5.0)
 parser.add_argument('--mse', type=float, default=7.0,
                     help='Sensitivity to motion (mean square error). If something like wind is triggering motion, '
@@ -113,10 +133,14 @@ parser.add_argument('--flip', action='store_true',
 parser.add_argument('--stop-at', type=str,
                     help='Stop running when this time is reached. (If this time has already passed today, '
                          'stop at this time tomorrow. Format: HH:MM:SS (24 hour clock)')
+# Custom Exposure Helper:
+# https://docs.google.com/spreadsheets/d/1cXzNoYFv1LZ3sZDgmQqybG2FHg8_APGk9uwHwIdpiM0/edit?usp=sharing
 parser.add_argument('--custom', action='store_true', help='Use custom Exposure table')
+
 parser.add_argument('--debug-discard', action='store_true', help='Debug discarding clips with short motions')
 args = parser.parse_args()
 
+print(f'ARGS: {args}')
 debug = True
 
 
@@ -129,7 +153,7 @@ class MotionCamera(object):
 
         self.args = args
         self.lsize = (320,240)
-        self._size = (1920, 1080)
+        self._size = (width, height) # sizes are constrained. See variable definitions
         self.exp = args.exposure
         self.fps = args.fps
         self.consecutive_frames = 0
@@ -147,9 +171,13 @@ class MotionCamera(object):
             self.stop_at = now.replace(hour=hour, minute=minute, second=second, microsecond=0)
             if self.stop_at < now:
                 print(f'WARNING: {self.stop_at} is in the past. Assuming you mean tomorrow and adjusting...')
-                self.top_at += timedelta(days=1)
+                self.stop_at += timedelta(days=1)
         self.delta = args.delta
         self.MAX_MSE = args.mse
+        self.max_mse = 0
+        self.total_frames = 0
+        self.motion_frames = 0
+        self.total_mse = 0
         self.mse = 0
         self.now = datetime.now()
         self.average = 0
@@ -159,7 +187,7 @@ class MotionCamera(object):
         self.outdir = ''
         self.tempdir = '/home/pi/inbox'
         os.makedirs(self.tempdir, exist_ok=True)
-
+        self.buffer = RingBuffer(self.BUFFER_SIZE * 9)
 
         self.picam2 = Picamera2()
 
@@ -180,13 +208,15 @@ class MotionCamera(object):
             controls["FrameDurationLimits"] = (self.exp, self.exp)
             controls["ExposureTime"] = self.exp
         else:
-            if False:
-                controls["ExposureTime"] = int(self.fps * 1000000)
-                # might be good at night?
+            controls["FrameRate"] = self.fps
+            # might be good at night?
+
         video_config = self.picam2.create_video_configuration(
             main={"size": self._size, "format": "RGB888"},
             lores={"size": self.lsize, "format": "YUV420"},
-            controls=controls
+            controls=controls,
+
+
         )
         video_config['transform'] = libcamera.Transform(hflip=args.flip, vflip=args.flip)
         self.picam2.configure(video_config)
@@ -203,24 +233,52 @@ class MotionCamera(object):
         print(f'encoder: {self.encoder}')
 
         def add_mse(request):
+            left = 30
+            ystep = 60
+            y = ystep
             with MappedArray(request, "main") as m:
                 metadata = request.get_metadata()
                 lux = metadata['Lux'] if 'Lux' in metadata else 'NOLUX'
                 exp_time = metadata['ExposureTime'] if 'ExposureTime' in metadata else 'NOEXP'
                 gain = metadata['AnalogueGain']
-                blue_motion = self.mse - self.average > self.delta
+                blue_motion = self.mse - self.average > self.delta # THIS NEEDS TO FACTOR INTO CLIP DISCARD
                 ts = datetime.strftime(self.now, '%Y/%m/%d %H:%M:%S')
-                cv2.putText(m.array, ts, top_origin_2, font, scale, (0,0,0), thickness + 2)
-                cv2.putText(m.array, ts, top_origin_2, font, scale, GREEN, thickness)
-                message = f'{self.mse:.2f}/{self.MAX_MSE:.2f} ({self.average:.4f} -> {self.mse - self.average:.4f}/D{self.delta:.2f}) CF: ' \
-                          f'{self.consecutive_frames} ISO: {gain:.02f} SS: {int(exp_time)} LUX: {lux:.05f}'
+                cv2.putText(m.array, ts, (left, y), font, scale, (0,0,0), thickness + 2)
+                cv2.putText(m.array, ts, (left, y), font, scale, GREEN, thickness)
+                message = f'ISO: {gain * 100:.0f} SS: {int(exp_time)} LUX: {lux:.02f} FPS: {self.fps:.1f}'
+                text_color = GREEN
+                y += ystep
+                cv2.putText(m.array, message, (left, y), font, scale, (0,0,0), thickness + 2)
+                cv2.putText(m.array, message, (left, y), font, scale, text_color, thickness)
+
+                # DISPLAY THESE VALUES:
+                #
+                # per frame values
+                # Frame MSE
+                #
+                # per clip values
+                # Max MSE
+                # Total Frames (of motion)
+                # Consecutive Frames (of motion)
+                # Average Motion (average mse of motion frames
+                #
+
+                XN = self.mse / self.average if self.average > 0 else 0.0
+                percent = self.motion_frames / self.total_frames * 100.0 if self.total_frames > 0 else 0
+                am = self.total_mse / self.motion_frames if self.motion_frames > 0 else 0
+                message = f'M: {self.mse:3.2f} A: {self.average:3.4f} d: {self.mse - self.average:8.4f} ' \
+                          f'({XN:6.1f} - {self.delta}) CF: {self.consecutive_frames} X: {self.max_mse:5.1f} ' \
+                          f't:{self.total_frames:4} m:{self.motion_frames:4} {percent:.0f}% AM: {am:6.2f}'
                 text_color = GREEN if blue_motion else YELLOW
-                cv2.putText(m.array, message, top_origin_1, font, scale, (0,0,0), thickness + 2)
-                cv2.putText(m.array, message, top_origin_1, font, scale, text_color, thickness)
+                y = height - ystep
+                cv2.putText(m.array, message, (left, y), font, scale, (0,0,0), thickness + 2)
+                cv2.putText(m.array, message, (left, y), font, scale, text_color, thickness)
                 if self.mse >= self.MAX_MSE:
                     cv2.circle(m.array, origin_red_dot, radius, RED, -1)
                 if blue_motion:
                     cv2.circle(m.array, origin_blue_dot, radius, BLUE, -1)
+                if self.buffer is not None and self.buffer.motion_detected:
+                    cv2.circle(m.array, origin_green_dot, radius, GREEN, -1)
 
         self.picam2.post_callback = add_mse
         self.picam2.start()
@@ -249,7 +307,6 @@ class MotionCamera(object):
             print(f'Timelapse will run until {self.stop_at.strftime("%Y-%m-%d %H:%M:%S")} '
                   f'(Time from now: {timedelta_formatter(self.stop_at - datetime.now())})')
 
-        buffer = RingBuffer(self.BUFFER_SIZE * 3)
         cframes = 0
 
         outfile = ''
@@ -281,25 +338,30 @@ class MotionCamera(object):
                 # Measure pixels differences between current and
                 # previous frame
                 self.mse = np.square(np.subtract(cur, prev)).mean()
-                self.average = buffer.append(self.mse)
+                self.average = self.buffer.append(self.mse)
                 current_delta = self.mse - self.average
+                self.total_frames += 1
                 # compare the average to the mse. If self.mse is N above average, motion detected
-                if current_delta > self.delta:
+                # blue_motion = self.mse - self.average > self.delta
+                if (self.mse - self.average > self.delta) or (current_delta > self.delta) or self.buffer.motion_detected:
                     if not encoding:
-                        # if we start recording immediately we get a args.seconds second lead. consider waiting 2 seconds.
-                        max_mse = self.mse
-                        file_basename = f"{self.now.strftime('%Y%m%d-%H%M%S.%f')}_motion_{self.mse:.1f}"
-                        outfile = os.path.join(self.tempdir, f"{file_basename}.h264")
+                        self.max_mse = self.mse
+                        self.total_frames = 0
+                        self.total_mse += self.mse
+                        file_basename = f"{self.now.strftime('%Y%m%d-%H%M%S')}_motion_{self.mse:.1f}"
+                        outfile = os.path.join(self.tempdir, f"{file_basename}-{self.fps}fps.h264")
                         self.encoder.output.fileoutput = outfile
                         self.encoder.output.start()
                         encoding = True
                         end_time = self.now + end_time_offset
                         print(f'Motion Detected: {outfile}, mse: {self.mse}')
                     else:
-                        if self.mse > max_mse:
-                            print(f' - MSE increased: {self.mse:.4f} delta: {current_delta:.4f}')
-                            max_mse = self.mse
+                        self.total_mse += self.mse
+                        if self.mse > self.max_mse:
+                            print(f' - MSE increased: {self.mse:.4f} delta: {current_delta:.4f} m: {(cframes + 1)/args.fps}')
+                            self.max_mse = self.mse
                     cframes += 1
+                    self.motion_frames += 1
                     if cframes > self.consecutive_frames:
                         self.consecutive_frames = cframes
                     if self.consecutive_frames >= self.cf_threshold:
@@ -312,17 +374,26 @@ class MotionCamera(object):
                         encoding = False
                         new_fname = ''
                         discarding = ''
-                        discard = self.consecutive_frames < self.cf_threshold
+                        am = self.total_mse / self.motion_frames if self.motion_frames > 0 else 100
+                        # self.buffer.motion_detected is per frame, not per clip. Can we use it?
+                        discard = ((self.consecutive_frames < self.cf_threshold) or (am < 0.9))
+                        self.motion_frames = 0
                         if discard:
-                            print(f'   - Less than {self.minmotion} seconds of motion. Discarding clip.')
+                            seconds = (1.0/args.fps) * self.consecutive_frames
+                            print(f'   - Less than {self.minmotion} seconds of motion ({seconds:.2f}). Discarding clip. CF: {self.consecutive_frames} (T: {self.cf_threshold} AM: {am}')
                             discarding = 'discards'
                             if not self.debug_discard:
                                 os.remove(outfile)
                         if not discard or self.debug_discard:
-                            new_fname = os.path.join(self.outdir, discarding, f'{file_basename}_{max_mse:.1f}.h264')
+                            d = f''
+                            if discard:
+                                d = f'-{self.consecutive_frames}-{am:.2f}'
+                            new_fname = os.path.join(self.outdir, discarding, f'{file_basename}_{self.max_mse:.1f}{d}-{self.fps}fps.h264')
                             os.rename(outfile, new_fname)
-                        print(f'- Motion End : {new_fname} (CF: {self.consecutive_frames}/{self.cf_threshold})')
+                        print(f'- Motion End : {new_fname} (CF: {self.consecutive_frames}/{self.cf_threshold:.2f})')
                         self.consecutive_frames = 0
+                        self.total_mse = 0
+                        self.total_frames = 0
                         # rename file to include max_mse
                         # TODO: delete file if max_mse below threshold?
 
@@ -334,7 +405,7 @@ class MotionCamera(object):
         self.outdir = now.strftime('/home/pi/exposures/%Y%m%d-motion2')
         os.makedirs(self.outdir, exist_ok=True)
         if self.debug_discard:
-            os.makedirs(os.path.join(self.outdir, 'discards'))
+            os.makedirs(os.path.join(self.outdir, 'discards'), exist_ok=True)
         self.outdir_day = now.day
     def stop(self):
         self.TIME_TO_STOP = True
