@@ -237,6 +237,16 @@ class MotionCamera(object):
             ystep = 60
             y = ystep
             with MappedArray(request, "main") as m:
+                ### Encode date and time into the first two pixels ([0,0] and [1,0])
+                # Pixels : color: BGR, offsets: [Y,X]
+                YY = self.now.year - 2000
+                MM = self.now.month
+                DD = self.now.day
+                m.array[0,0] = (YY, MM, DD)
+                HH = self.now.hour
+                MM = self.now.minute
+                SS = self.now.second
+                m.array[1,0] = (HH, MM, SS)
                 metadata = request.get_metadata()
                 lux = metadata['Lux'] if 'Lux' in metadata else 'NOLUX'
                 exp_time = metadata['ExposureTime'] if 'ExposureTime' in metadata else 'NOEXP'
