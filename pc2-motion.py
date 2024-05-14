@@ -15,7 +15,7 @@ from picamera2 import Picamera2, MappedArray
 Picamera2.set_logging(Picamera2.WARNING)
 os.environ['LIBCAMERA_LOG_LEVELS'] = 'ERROR'
 
-from picamera2.encoders import H264Encoder
+from picamera2.encoders import H264Encoder, Quality
 from picamera2.outputs import CircularOutput
 import libcamera
 
@@ -292,7 +292,7 @@ class MotionCamera(object):
 
         self.picam2.post_callback = add_mse
         self.picam2.start()
-        self.picam2.start_encoder(self.encoder)
+        self.picam2.start_encoder(self.encoder, quality=Quality.VERY_HIGH)
         metadata = self.picam2.capture_metadata()
         print(f'METADATA: {metadata}')
 
