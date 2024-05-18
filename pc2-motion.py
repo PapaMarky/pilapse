@@ -112,6 +112,11 @@ origin_green_dot = (width - int(radius * 7), radius * 2)
 
 
 parser = argparse.ArgumentParser('Simple video motion capture based on Picamera2')
+
+### TODO : Implement "night mode".
+# When it is dark (transition at lux 2.2 ... 2.0), set fps to 15, exposure to 66666.66, and ISO to 2200
+# filenames should reflect correct FPS
+
 parser.add_argument('--exposure', type=int,
                     help='force the exposure speed (Microseconds). If fps frequent, it will be reduced')
 parser.add_argument('--fps', type=int, default=30,
@@ -191,6 +196,12 @@ class MotionCamera(object):
 
         self.picam2 = Picamera2()
 
+        # Track the "fps" of the loop and the callback (add_mse) so we know when we have overburdoned the callback
+        self.loop_previous_time = None
+        self.loop_fps = 0
+        self.callback_previous_time = None
+        self.callback_fps = 0
+
     def setup(self):
         controls={
             'AeEnable': True,
@@ -233,6 +244,13 @@ class MotionCamera(object):
         print(f'encoder: {self.encoder}')
 
         def add_mse(request):
+            # Calculate the "fps" of this callback
+            now = datetime.now()
+            if self.callback_previous_time is not None:
+                elapsed = now - self.callback_previous_time
+                self.callback_fps = 1.0/elapsed.total_seconds()
+            self.callback_previous_time = now
+
             left = 30
             ystep = 60
             y = ystep
@@ -241,11 +259,10 @@ class MotionCamera(object):
                 lux = metadata['Lux'] if 'Lux' in metadata else 'NOLUX'
                 exp_time = metadata['ExposureTime'] if 'ExposureTime' in metadata else 'NOEXP'
                 gain = metadata['AnalogueGain']
-                blue_motion = self.mse - self.average > self.delta # THIS NEEDS TO FACTOR INTO CLIP DISCARD
-                ts = datetime.strftime(self.now, '%Y/%m/%d %H:%M:%S')
+                ts = datetime.strftime(now, '%Y/%m/%d %H:%M:%S')
                 cv2.putText(m.array, ts, (left, y), font, scale, (0,0,0), thickness + 2)
                 cv2.putText(m.array, ts, (left, y), font, scale, GREEN, thickness)
-                message = f'ISO: {gain * 100:.0f} SS: {int(exp_time)} LUX: {lux:.02f} FPS: {self.fps:.1f}'
+                message = f'ISO: {gain * 100:.0f} SS: {int(exp_time)} LUX: {lux:.02f} FPS: {self.fps:.1f} (loop: {int(self.loop_fps)} cb: {int(self.callback_fps)})'
                 text_color = GREEN
                 y += ystep
                 cv2.putText(m.array, message, (left, y), font, scale, (0,0,0), thickness + 2)
@@ -262,23 +279,26 @@ class MotionCamera(object):
                 # Consecutive Frames (of motion)
                 # Average Motion (average mse of motion frames
                 #
-
-                XN = self.mse / self.average if self.average > 0 else 0.0
-                percent = self.motion_frames / self.total_frames * 100.0 if self.total_frames > 0 else 0
-                am = self.total_mse / self.motion_frames if self.motion_frames > 0 else 0
-                message = f'M: {self.mse:3.2f} A: {self.average:3.4f} d: {self.mse - self.average:8.4f} ' \
-                          f'({XN:6.1f} - {self.delta}) CF: {self.consecutive_frames} X: {self.max_mse:5.1f} ' \
-                          f't:{self.total_frames:4} m:{self.motion_frames:4} {percent:.0f}% AM: {am:6.2f}'
-                text_color = GREEN if blue_motion else YELLOW
-                y = height - ystep
-                cv2.putText(m.array, message, (left, y), font, scale, (0,0,0), thickness + 2)
-                cv2.putText(m.array, message, (left, y), font, scale, text_color, thickness)
-                if self.mse >= self.MAX_MSE:
-                    cv2.circle(m.array, origin_red_dot, radius, RED, -1)
-                if blue_motion:
-                    cv2.circle(m.array, origin_blue_dot, radius, BLUE, -1)
-                if self.buffer is not None and self.buffer.motion_detected:
-                    cv2.circle(m.array, origin_green_dot, radius, GREEN, -1)
+                if False:
+                    ### Doing all of this slows the outer loop down too much.
+                    ### Consider retrying file with per-frame data?
+                    blue_motion = self.mse - self.average > self.delta # THIS NEEDS TO FACTOR INTO CLIP DISCARD
+                    XN = self.mse / self.average if self.average > 0 else 0.0
+                    percent = self.motion_frames / self.total_frames * 100.0 if self.total_frames > 0 else 0
+                    am = self.total_mse / self.motion_frames if self.motion_frames > 0 else 0
+                    message = f'M: {self.mse:3.2f} A: {self.average:3.4f} d: {self.mse - self.average:8.4f} ' \
+                              f'({XN:6.1f} - {self.delta}) CF: {self.consecutive_frames} X: {self.max_mse:5.1f} ' \
+                              f't:{self.total_frames:4} m:{self.motion_frames:4} {percent:.0f}% AM: {am:6.2f}'
+                    text_color = GREEN if blue_motion else YELLOW
+                    y = height - ystep
+                    cv2.putText(m.array, message, (left, y), font, scale, (0,0,0), thickness + 2)
+                    cv2.putText(m.array, message, (left, y), font, scale, text_color, thickness)
+                    if self.mse >= self.MAX_MSE:
+                        cv2.circle(m.array, origin_red_dot, radius, RED, -1)
+                    if blue_motion:
+                        cv2.circle(m.array, origin_blue_dot, radius, BLUE, -1)
+                    if self.buffer is not None and self.buffer.motion_detected:
+                        cv2.circle(m.array, origin_green_dot, radius, GREEN, -1)
 
         self.picam2.post_callback = add_mse
         self.picam2.start()
@@ -315,6 +335,7 @@ class MotionCamera(object):
         end_time = None
         end_time_offset = timedelta(seconds=self.args.seconds)
         while True:
+            ### NOTE If we try to do too much in add_mse callback, this loop falls behind
             if self.TIME_TO_STOP:
                 print('Shutting down...')
                 break
@@ -329,6 +350,12 @@ class MotionCamera(object):
             # Create an overlay with the MSE for debugging
             if prev is not None:
                 self.now = datetime.now()
+                ## Calculate FPS of "loop" so we can compare to expected fps and fps of callback
+                ## This lets us know if the callback is doing too much
+                if self.loop_previous_time is not None:
+                    elapsed = self.now - self.loop_previous_time
+                    self.loop_fps = 1.0 / elapsed.total_seconds()
+                self.loop_previous_time = self.now
                 if self.now.day != self.outdir_day:
                     self.set_outdir()
 
