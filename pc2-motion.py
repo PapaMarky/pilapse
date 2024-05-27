@@ -113,11 +113,6 @@ origin_green_dot = (width - int(radius * 7), radius * 2)
 
 parser = argparse.ArgumentParser('Simple video motion capture based on Picamera2')
 
-### TODO : Implement "night mode".
-# When it is dark (transition at lux 2.2 ... 2.0), set fps to 15, exposure to 66666.66, and ISO to 2200
-# filenames should reflect correct FPS
-
-## TODO DEPRECATE --exposure. Night mode obviates it
 parser.add_argument('--exposure', type=int,
                     help='force the exposure speed (Microseconds). If fps frequent, it will be reduced')
 parser.add_argument('--fps', type=int, default=30,
@@ -167,7 +162,6 @@ class MotionCamera(object):
         self.args = args
         self.lsize = (320,240)
         self._size = (width, height) # sizes are constrained. See variable definitions
-        self.exp = args.exposure
         self.fps = args.fps
         self.consecutive_frames = 0
         self.BUFFER_SIZE = math.ceil(args.seconds * self.fps)
@@ -275,16 +269,7 @@ class MotionCamera(object):
         if args.custom:
             controls['AeExposureMode'] = libcamera.controls.AeExposureModeEnum.Custom
 
-        if args.exposure is not None:
-            maxfps = self.exp / 1000000
-            if self.fps > maxfps:
-                print(f'WARNING: fps is too fast. Setting to {maxfps:.4f}')
-                fps = maxfps
-            controls["FrameDurationLimits"] = (self.exp, self.exp)
-            controls["ExposureTime"] = self.exp
-        else:
-            controls["FrameRate"] = self.fps
-            # might be good at night?
+        controls["FrameRate"] = self.fps
 
         video_config = self.picam2.create_video_configuration(
             main={"size": self._size, "format": "RGB888"},
