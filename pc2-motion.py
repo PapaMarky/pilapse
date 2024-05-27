@@ -19,7 +19,7 @@ from picamera2.encoders import H264Encoder, Quality
 from picamera2.outputs import CircularOutput
 import libcamera
 
-from collections import deque
+from pprint import *
 
 N = 1.5
 class RingBuffer(object):
@@ -117,11 +117,19 @@ parser = argparse.ArgumentParser('Simple video motion capture based on Picamera2
 # When it is dark (transition at lux 2.2 ... 2.0), set fps to 15, exposure to 66666.66, and ISO to 2200
 # filenames should reflect correct FPS
 
+## TODO DEPRECATE --exposure. Night mode obviates it
 parser.add_argument('--exposure', type=int,
                     help='force the exposure speed (Microseconds). If fps frequent, it will be reduced')
 parser.add_argument('--fps', type=int, default=30,
                     help='output video frames per second. If this is too high for the requested exposure time, '
                          'fps will be reduced. Default: 30. Faster values impact the motion detection algorithm')
+parser.add_argument('--night-fps', type=int, default=15,
+                    help='When the LUX drops below a certain level, force the camera FrameDurationLimits, ExposureTime, '
+                         'FrameRate based on this value')
+parser.add_argument("--lux-hi", type=float, default=3.0,
+                    help="Highwater for night mode. (switch to day mode above this lux)")
+parser.add_argument("--lux-lo", type=float, default=2.5,
+                    help="Lowwater for night mode. (switch to night mode below this lux)")
 parser.add_argument('--seconds', type=float, help='Number of seconds in circular buffer (default: 5)', default=5.0)
 parser.add_argument('--mse', type=float, default=7.0,
                     help='Sensitivity to motion (mean square error). If something like wind is triggering motion, '
@@ -155,7 +163,7 @@ class MotionCamera(object):
     def __init__(self, args):
         if self.CURRENT_CAMERA is not None:
             raise Exception('You can only have one camera at a time')
-
+        self.CURRENT_CAMERA = self
         self.args = args
         self.lsize = (320,240)
         self._size = (width, height) # sizes are constrained. See variable definitions
@@ -195,6 +203,7 @@ class MotionCamera(object):
         self.buffer = RingBuffer(self.BUFFER_SIZE * 9)
 
         self.picam2 = Picamera2()
+        # pprint(self.picam2.sensor_modes)
 
         # Track the "fps" of the loop and the callback (add_mse) so we know when we have overburdoned the callback
         self.loop_previous_time = None
@@ -202,7 +211,62 @@ class MotionCamera(object):
         self.callback_previous_time = None
         self.callback_fps = 0
 
+        # Use the latest LUX from the camera to check if we should be in daytime or nightime mode.
+        self.lux = None
+        self.nightmode = False
+        self.night_exposure = int((1.0 / args.night_fps) * 1000000)
+        print(f'NIGHT EXPOSURE: {self.night_exposure}')
+        self.night_iso = 8.0
+        self.scalar_crop = None
+
+    def setup_night_mode(self):
+        if self.nightmode:
+            print(f'WARNING: setup_night_mode called in night mode')
+            return
+        print(f'### Start Night Mode: ISO: {self.night_iso:.2f}, EXP: {self.night_exposure}')
+        self.nightmode = True
+        self.picam2.stop()
+        self.cf_threshold = args.night_fps * args.minmotion
+        with self.picam2.controls as controls:
+            controls.AeEnable = False
+            controls.AwbEnable = False
+            controls.FrameRate = args.night_fps
+            controls.FrameDurationLimits = (self.night_exposure, self.night_exposure)
+            controls.ExposureTime = self.night_exposure
+            controls.AnalogueGain = self.night_iso
+            # controls.AeExposureMode = libcamera.controls.AeExposureModeEnum.Long
+            if self.scalar_crop is not None:
+                controls.ScalerCrop = self.scalar_crop
+        self.picam2.start()
+        metadata = self.picam2.capture_metadata()
+        print(f'NIGHT META: {metadata}')
+
+    def setup_day_mode(self):
+        if not self.nightmode:
+            print(f'WARNING: setup_day_mode called in day mode')
+            return
+        print(f'### Start Day Mode')
+        self.nightmode = False
+        # exposure_time = int((1.0 / args.fps) * 1000000)
+        self.cf_threshold = args.fps * args.minmotion
+        with self.picam2.controls as controls:
+            controls.AeEnable = True
+            controls.AwbEnable = True
+            controls.FrameRate = args.fps
+            if args.custom:
+                controls.AeExposureMode = libcamera.controls.AeExposureModeEnum.Custom
+            else:
+                controls.AeExposureMode = libcamera.controls.AeExposureModeEnum.Normal
+
+            # controls.ExposureTime = exposure_time
+            # controls.FrameDurationLimits = (exposure_time, exposure_time)
+            if self.scalar_crop is not None:
+                controls.ScalerCrop = self.scalar_crop
+        metadata = self.picam2.capture_metadata()
+        print(f'DAY METADATA: {metadata}')
+
     def setup(self):
+        self.nightmode = False
         controls={
             'AeEnable': True,
             'AwbEnable': True,
@@ -232,6 +296,8 @@ class MotionCamera(object):
         video_config['transform'] = libcamera.Transform(hflip=args.flip, vflip=args.flip)
         self.picam2.configure(video_config)
 
+        # print(f'CONFIG: {self.picam2.camera_configuration()}')
+
         self.set_outdir()
 
     def start(self):
@@ -256,13 +322,17 @@ class MotionCamera(object):
             y = ystep
             with MappedArray(request, "main") as m:
                 metadata = request.get_metadata()
-                lux = metadata['Lux'] if 'Lux' in metadata else 'NOLUX'
+                self.lux = metadata['Lux'] if 'Lux' in metadata else 'NOLUX'
                 exp_time = metadata['ExposureTime'] if 'ExposureTime' in metadata else 'NOEXP'
+                fduration = metadata['FrameDuration'] if 'FrameDuration' in metadata else 'NODUR'
                 gain = metadata['AnalogueGain']
                 ts = datetime.strftime(now, '%Y/%m/%d %H:%M:%S')
                 cv2.putText(m.array, ts, (left, y), font, scale, (0,0,0), thickness + 2)
                 cv2.putText(m.array, ts, (left, y), font, scale, GREEN, thickness)
-                message = f'ISO: {gain * 100:.0f} SS: {int(exp_time)} LUX: {lux:.02f} FPS: {self.fps:.1f} (loop: {int(self.loop_fps)} cb: {int(self.callback_fps)})'
+                nightmode = "night" if self.nightmode else "day"
+                fps = args.night_fps if self.nightmode else self.fps
+                message = (f'ISO: {gain * 100:.0f} SS: {int(exp_time)} FD: {int(fduration)} LUX: {self.lux:.02f} FPS: {fps:.1f} '
+                           f'(loop: {int(self.loop_fps)} cb: {int(self.callback_fps)}) {nightmode}')
                 text_color = GREEN
                 y += ystep
                 cv2.putText(m.array, message, (left, y), font, scale, (0,0,0), thickness + 2)
@@ -302,6 +372,8 @@ class MotionCamera(object):
 
         self.picam2.post_callback = add_mse
         self.picam2.start()
+        # once the camera is started, we can read get it's max ISO (analogue gain) to set up for nightmode
+        self.night_iso = self.picam2.camera_controls['AnalogueGain'][1]
         self.picam2.start_encoder(self.encoder, quality=Quality.VERY_HIGH)
         metadata = self.picam2.capture_metadata()
         print(f'METADATA: {metadata}')
@@ -315,8 +387,9 @@ class MotionCamera(object):
             new_h = h/zoom
             new_x = x + w/2 - new_w/2
             new_y = y + h/2 - new_h/2
+            self.scalar_crop = (int(new_x), int(new_y), int(new_w), int(new_h))
             self.picam2.set_controls({
-                'ScalerCrop': (int(new_x), int(new_y), int(new_w), int(new_h))
+                'ScalerCrop': self.scalar_crop
             })
             time.sleep(1.0)
             print(f'Zoomed ScalerCrop: {self.picam2.capture_metadata()["ScalerCrop"]}')
@@ -334,6 +407,8 @@ class MotionCamera(object):
         encoding = False
         end_time = None
         end_time_offset = timedelta(seconds=self.args.seconds)
+        previous_minute = None
+        TEST_NIGHT_MODE = False
         while True:
             ### NOTE If we try to do too much in add_mse callback, this loop falls behind
             if self.TIME_TO_STOP:
@@ -350,6 +425,7 @@ class MotionCamera(object):
             # Create an overlay with the MSE for debugging
             if prev is not None:
                 self.now = datetime.now()
+
                 ## Calculate FPS of "loop" so we can compare to expected fps and fps of callback
                 ## This lets us know if the callback is doing too much
                 if self.loop_previous_time is not None:
@@ -376,7 +452,8 @@ class MotionCamera(object):
                         self.total_frames = 0
                         self.total_mse += self.mse
                         file_basename = f"{self.now.strftime('%Y%m%d-%H%M%S')}_motion_{self.mse:.1f}"
-                        outfile = os.path.join(self.tempdir, f"{file_basename}-{self.fps}fps.h264")
+                        fps = args.night_fps if self.nightmode else self.fps
+                        outfile = os.path.join(self.tempdir, f"{file_basename}-{fps}fps.h264")
                         self.encoder.output.fileoutput = outfile
                         self.encoder.output.start()
                         encoding = True
@@ -415,7 +492,8 @@ class MotionCamera(object):
                             d = f''
                             if discard:
                                 d = f'-{self.consecutive_frames}-{am:.2f}'
-                            new_fname = os.path.join(self.outdir, discarding, f'{file_basename}_{self.max_mse:.1f}{d}-{self.fps}fps.h264')
+                            fps = args.night_fps if self.nightmode else self.fps
+                            new_fname = os.path.join(self.outdir, discarding, f'{file_basename}_{self.max_mse:.1f}{d}-{fps}fps.h264')
                             os.rename(outfile, new_fname)
                         print(f'- Motion End : {new_fname} (CF: {self.consecutive_frames}/{self.cf_threshold:.2f})')
                         self.consecutive_frames = 0
@@ -425,6 +503,19 @@ class MotionCamera(object):
                         # TODO: delete file if max_mse below threshold?
 
             prev = cur
+            if not encoding:
+                # only check for change in night mode when not encoding so that we do not change the frame rate in the
+                # middle of a video clip
+                # TODO : This isn't working. I still get clips where I see the camera go from night to day. I suspect
+                #        it is because the circular buffer has extra frames when we end the clip or something similar
+                # print(f'nm: {self.nightmode} lux: {self.lux} hi: {args.lux_hi} lo: {args.lux_lo}')
+                if self.nightmode:
+                    if self.lux >= args.lux_hi:
+                        self.setup_day_mode()
+                else:
+                    if self.lux <= args.lux_lo:
+                        self.setup_night_mode()
+
         self.picam2.stop_encoder()
 
     def set_outdir(self):
