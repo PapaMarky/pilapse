@@ -447,7 +447,7 @@ class MotionCamera(object):
                     else:
                         self.total_mse += self.mse
                         if self.mse > self.max_mse:
-                            print(f' - MSE increased: {self.mse:.4f} delta: {current_delta:.4f} m: {(cframes + 1)/args.fps}')
+                            print(f' - MSE increased: {self.mse:.4f} delta: {current_delta:.4f} m: {(cframes + 1)/args.fps:.4f}')
                             self.max_mse = self.mse
                     cframes += 1
                     self.motion_frames += 1
