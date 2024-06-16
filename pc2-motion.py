@@ -438,7 +438,7 @@ class MotionCamera(object):
                         self.total_mse += self.mse
                         file_basename = f"{self.now.strftime('%Y%m%d-%H%M%S')}_motion_{self.mse:.1f}"
                         fps = args.night_fps if self.nightmode else self.fps
-                        outfile = os.path.join(self.tempdir, f"{file_basename}-{fps}fps.h264")
+                        outfile = os.path.join(self.tempdir, f"{file_basename}_{fps}fps.h264")
                         self.encoder.output.fileoutput = outfile
                         self.encoder.output.start()
                         encoding = True
@@ -478,7 +478,7 @@ class MotionCamera(object):
                             if discard:
                                 d = f'-{self.consecutive_frames}-{am:.2f}'
                             fps = args.night_fps if self.nightmode else self.fps
-                            new_fname = os.path.join(self.outdir, discarding, f'{file_basename}_{self.max_mse:.1f}{d}-{fps}fps.h264')
+                            new_fname = os.path.join(self.outdir, discarding, f'{file_basename}_{self.max_mse:.1f}{d}_{fps}fps.h264')
                             os.rename(outfile, new_fname)
                         print(f'- Motion End : {new_fname} (CF: {self.consecutive_frames}/{self.cf_threshold:.2f})')
                         self.consecutive_frames = 0
