@@ -23,14 +23,67 @@ from pprint import *
 
 N = 1.5
 class RingBuffer(object):
-    """ class that implements a not-yet-full buffer """
     def __init__(self, size_max):
         self.max = size_max
         self.data = []
         self.cur = 0
+        self._is_full = False
+
+    def append_full(self, x):
+        self.data[self.cur] = x
+        self.cur = (self.cur+1) % self.max
+
+    def append(self,x):
+        """append an element at the end of the buffer"""
+        if self._is_full:
+            self.append_full(x)
+        else:
+            self.data.append(x)
+            if len(self.data) >= self.max:
+                self._is_full = True
+
+class FrameDataBuffer(RingBuffer):
+    def __init__(self, size_max, clip_data:str):
+        super().__init__(size_max)
+        self.file = None
+        self.filename = None
+        self.clip_data = clip_data
+
+    def is_writing(self):
+        return self.file is not None
+
+    def append(self, x):
+        if self.file is None:
+            self.data.append(x)
+            if len(self.data) > self.max:
+                self.data.pop(0)
+        else:
+            self.file.write(x + '\n')
+
+    def start_clip(self, filename):
+        self.filename = filename
+        self.file = open(filename, 'w')
+        self.file.write(f'CLIP: {self.clip_data}' + '\n')
+        for frame in self.data:
+            self.file.write(frame + '\n')
+        # self.data = []
+
+    def stop_clip(self):
+        if self.file is not None:
+            file = self.file
+            self.file = None
+            file.flush()
+            file.close()
+        self.data = []
+        self.cur = 0
+        self._is_full = False
+
+class MotionAveragingBuffer(RingBuffer):
+    """ class that implements a not-yet-full buffer """
+    def __init__(self, size_max):
+        super().__init__(size_max)
         self._total = 0
         self.average = None
-        self._is_full = False
         self._motion_detected = False
 
     @property
@@ -47,22 +100,15 @@ class RingBuffer(object):
 
         old_x = self.data[self.cur]
         self._total += x - old_x
-        self.data[self.cur] = x
-        self.cur = (self.cur+1) % self.max
+        super().append_full(x)
 
     def append(self,x):
         """append an element at the end of the buffer"""
-        if self._is_full:
-            self.append_full(x)
-        else:
-            self.data.append(x)
+        if not self._is_full:
             self._total += x
-            if len(self.data) >= self.max:
-                self._is_full = True
-
+        super().append(x)
         self.average = self._total / len(self.data)
         return self.average
-
 
 def timedelta_formatter(td:timedelta):
     #  TODO : move to library
@@ -194,7 +240,7 @@ class MotionCamera(object):
         self.outdir = ''
         self.tempdir = '/home/pi/inbox'
         os.makedirs(self.tempdir, exist_ok=True)
-        self.buffer = RingBuffer(self.BUFFER_SIZE * 9)
+        self.buffer = MotionAveragingBuffer(self.BUFFER_SIZE * 9)
 
         self.picam2 = Picamera2()
         # pprint(self.picam2.sensor_modes)
@@ -291,6 +337,8 @@ class MotionCamera(object):
         # 5 seconds X FramesPerSecond
         print(f'BUFFER_SIZE = {self.BUFFER_SIZE} (fps: {self.fps}, seconds: {args.seconds}) MSE Threshold: {self.MAX_MSE}')
         self.encoder.output = CircularOutput(buffersize=self.BUFFER_SIZE)
+        clip_data = f'version: 1, mse: {args.mse}, delta: {args.delta}, minmotion: {args.minmotion}, seconds: {args.seconds}, lux_lo: {args.lux_lo}, lux_hi: {args.lux_hi}, zoom: {args.zoom}'
+        self.frame_data_buffer = FrameDataBuffer(self.BUFFER_SIZE, clip_data)
         # picam2.encoder = encoder
         print(f'encoder: {self.encoder}')
 
@@ -311,8 +359,13 @@ class MotionCamera(object):
                 exp_time = metadata['ExposureTime'] if 'ExposureTime' in metadata else 'NOEXP'
                 fduration = metadata['FrameDuration'] if 'FrameDuration' in metadata else 'NODUR'
                 gain = metadata['AnalogueGain']
-                ts = datetime.strftime(now, '%Y/%m/%d %H:%M:%S')
-                cv2.putText(m.array, ts, (left, y), font, scale, (0,0,0), thickness + 2)
+                ts = datetime.strftime(now, '%Y/%m/%d %H:%M:%S.%f')
+
+                motion = (self.mse - self.average > self.delta) or (self.mse - self.average > self.delta) or self.buffer.motion_detected
+                if motion and not self.frame_data_buffer.is_writing():
+                    self.frame_data_buffer.start_clip(self.file_basename + '_data.txt')
+
+                # cv2.putText(m.array, ts, (left, y), font, scale, (0,0,0), thickness + 2)
                 cv2.putText(m.array, ts, (left, y), font, scale, GREEN, thickness)
                 nightmode = "night" if self.nightmode else "day"
                 fps = args.night_fps if self.nightmode else self.fps
@@ -320,8 +373,12 @@ class MotionCamera(object):
                            f'(loop: {int(self.loop_fps)} cb: {int(self.callback_fps)}) {nightmode}')
                 text_color = GREEN
                 y += ystep
-                cv2.putText(m.array, message, (left, y), font, scale, (0,0,0), thickness + 2)
+                #cv2.putText(m.array, message, (left, y), font, scale, (0,0,0), thickness + 2)
                 cv2.putText(m.array, message, (left, y), font, scale, text_color, thickness)
+
+                motion_str = 'M' if motion else '_'
+                frame_data = f'{ts},{fps},{self.lux:.2f},{self.mse:.4f},{self.average:.4f},{motion_str}'
+                self.frame_data_buffer.append(frame_data)
 
                 # DISPLAY THESE VALUES:
                 #
@@ -389,7 +446,7 @@ class MotionCamera(object):
 
         outfile = ''
         prev = None
-        encoding = False
+        self.encoding = False
         end_time = None
         end_time_offset = timedelta(seconds=self.args.seconds)
         previous_minute = None
@@ -426,24 +483,27 @@ class MotionCamera(object):
                 # Measure pixels differences between current and
                 # previous frame
                 self.mse = np.square(np.subtract(cur, prev)).mean()
+                # "average" is the baseline level of motion (caused by wind, cloud shadows, etc)
                 self.average = self.buffer.append(self.mse)
+                date_time_string = self.now.strftime('%Y%m%d-%H%M%S.%f')
                 current_delta = self.mse - self.average
                 self.total_frames += 1
                 # compare the average to the mse. If self.mse is N above average, motion detected
                 # blue_motion = self.mse - self.average > self.delta
                 if (self.mse - self.average > self.delta) or (current_delta > self.delta) or self.buffer.motion_detected:
-                    if not encoding:
+                    if not self.encoding:
                         self.max_mse = self.mse
                         self.total_frames = 0
                         self.total_mse += self.mse
-                        file_basename = f"{self.now.strftime('%Y%m%d-%H%M%S')}_motion_{self.mse:.1f}"
+                        self.file_basename = f"{date_time_string}_motion_{self.mse:.1f}"
                         fps = args.night_fps if self.nightmode else self.fps
-                        outfile = os.path.join(self.tempdir, f"{file_basename}_{fps}fps.h264")
+                        outfile = os.path.join(self.tempdir, f"{self.file_basename}_{fps}fps.h264")
                         self.encoder.output.fileoutput = outfile
+                        # Start saving video buffer to file
                         self.encoder.output.start()
-                        encoding = True
+                        self.encoding = True
                         end_time = self.now + end_time_offset
-                        print(f'Motion Detected: {outfile}, mse: {self.mse}')
+                        print(f'Motion Detected: {outfile}, mse: {self.mse:.4f}')
                     else:
                         self.total_mse += self.mse
                         if self.mse > self.max_mse:
@@ -458,9 +518,11 @@ class MotionCamera(object):
 
                 else:
                     cframes = 0
-                    if encoding and self.now > end_time:
+                    if self.encoding and self.now > end_time:
+                        # STOP saving video clip to file
                         self.encoder.output.stop()
-                        encoding = False
+                        self.encoding = False
+                        self.frame_data_buffer.stop_clip()
                         new_fname = ''
                         discarding = ''
                         am = self.total_mse / self.motion_frames if self.motion_frames > 0 else 100
@@ -469,17 +531,23 @@ class MotionCamera(object):
                         self.motion_frames = 0
                         if discard:
                             seconds = (1.0/args.fps) * self.consecutive_frames
-                            print(f'   - Less than {self.minmotion} seconds of motion ({seconds:.2f}). Discarding clip. CF: {self.consecutive_frames} (T: {self.cf_threshold} AM: {am}')
+                            print(f'   - Less than {self.minmotion} seconds of motion ({seconds:.2f}). Discarding clip. CF: {self.consecutive_frames} (T: {self.cf_threshold} AM: {am:.4f}')
                             discarding = 'discards'
                             if not self.debug_discard:
                                 os.remove(outfile)
+                                if self.frame_data_buffer.filename is not None and os.path.exists(self.frame_data_buffer.filename):
+                                    os.remove(self.frame_data_buffer.filename)
                         if not discard or self.debug_discard:
                             d = f''
                             if discard:
                                 d = f'-{self.consecutive_frames}-{am:.2f}'
                             fps = args.night_fps if self.nightmode else self.fps
-                            new_fname = os.path.join(self.outdir, discarding, f'{file_basename}_{self.max_mse:.1f}{d}_{fps}fps.h264')
+                            new_fname = os.path.join(self.outdir, discarding, f'{self.file_basename}_{self.max_mse:.1f}{d}_{fps}fps.h264')
                             os.rename(outfile, new_fname)
+                            if self.frame_data_buffer.filename is not None:
+                                new_data_fname = os.path.join(self.outdir, discarding, self.frame_data_buffer.filename)
+                                ### Move file rename to separate thread
+                                os.rename(self.frame_data_buffer.filename, new_data_fname)
                         print(f'- Motion End : {new_fname} (CF: {self.consecutive_frames}/{self.cf_threshold:.2f})')
                         self.consecutive_frames = 0
                         self.total_mse = 0
@@ -488,7 +556,7 @@ class MotionCamera(object):
                         # TODO: delete file if max_mse below threshold?
 
             prev = cur
-            if not encoding:
+            if not self.encoding:
                 # only check for change in night mode when not encoding so that we do not change the frame rate in the
                 # middle of a video clip
                 # TODO : This isn't working. I still get clips where I see the camera go from night to day. I suspect
@@ -502,6 +570,7 @@ class MotionCamera(object):
                         self.setup_night_mode()
 
         self.picam2.stop_encoder()
+        self.frame_data_buffer.stop_clip()
 
     def set_outdir(self):
         now = datetime.now()
