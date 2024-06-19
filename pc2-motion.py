@@ -200,6 +200,7 @@ debug = True
 
 class MotionCamera(object):
     CURRENT_CAMERA = None
+    RAW_DIR_NAME = 'raw'
 
     def __init__(self, args):
         if self.CURRENT_CAMERA is not None:
@@ -523,7 +524,7 @@ class MotionCamera(object):
                         self.encoder.output.stop()
                         self.encoding = False
                         self.frame_data_buffer.stop_clip()
-                        new_fname = ''
+                        new_file_name = ''
                         discarding = ''
                         am = self.total_mse / self.motion_frames if self.motion_frames > 0 else 100
                         # self.buffer.motion_detected is per frame, not per clip. Can we use it?
@@ -542,13 +543,13 @@ class MotionCamera(object):
                             if discard:
                                 d = f'-{self.consecutive_frames}-{am:.2f}'
                             fps = args.night_fps if self.nightmode else self.fps
-                            new_fname = os.path.join(self.outdir, discarding, f'{self.file_basename}_{self.max_mse:.1f}{d}_{fps}fps.h264')
-                            os.rename(outfile, new_fname)
+                            new_file_name = os.path.join(self.outdir, discarding, f'{self.file_basename}_{self.max_mse:.1f}{d}_{fps}fps.h264')
+                            os.rename(outfile, new_file_name)
                             if self.frame_data_buffer.filename is not None:
-                                new_data_fname = os.path.join(self.outdir, discarding, self.frame_data_buffer.filename)
+                                new_data_filename = os.path.join(self.outdir, discarding, self.frame_data_buffer.filename)
                                 ### Move file rename to separate thread
-                                os.rename(self.frame_data_buffer.filename, new_data_fname)
-                        print(f'- Motion End : {new_fname} (CF: {self.consecutive_frames}/{self.cf_threshold:.2f})')
+                                os.rename(self.frame_data_buffer.filename, new_data_filename)
+                        print(f'- Motion End : {new_file_name} (CF: {self.consecutive_frames}/{self.cf_threshold:.2f})')
                         self.consecutive_frames = 0
                         self.total_mse = 0
                         self.total_frames = 0
@@ -574,7 +575,7 @@ class MotionCamera(object):
 
     def set_outdir(self):
         now = datetime.now()
-        self.outdir = now.strftime('/home/pi/exposures/%Y%m%d-motion2')
+        self.outdir = now.strftime(f'/home/pi/exposures/%Y%m%d-motion2/{self.RAW_DIR_NAME}')
         os.makedirs(self.outdir, exist_ok=True)
         if self.debug_discard:
             os.makedirs(os.path.join(self.outdir, 'discards'), exist_ok=True)
