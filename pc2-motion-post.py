@@ -36,7 +36,7 @@ class ClipMetadata(object):
         if i < 0 or i >= len(self.framedata):
             message = f'bad frame index: {i} is not between 0 and {len(self.framedata)}'
             logging.error(message)
-            raise Exception(message)
+            return None
         return self.framedata[i]
 
     def parse_header(self, header:str):
@@ -132,6 +132,8 @@ class RawClipProcessor(object):
         metadata_offset = self.metadata.nframes - self.frame_count
         if self.metadata.nframes > self.frame_count:
             metadata_offset -= 1
+        if self.metadata.nframes < self.frame_count:
+            metadata_offset = 0
         logging.debug(f'Calculate motion graph: {self.metadata.nframes} metadata frames, {self.frame_count} '
                      f'frames, offset: {metadata_offset}')
         self.motion_graph = []
@@ -145,9 +147,9 @@ class RawClipProcessor(object):
                 logging.error(f'Failed to get metadata for frame {i}')
                 logging.error(f'{self.metadata.nframes} metadata frames, {self.frame_count} frames, offset:')
                 raise e
-            mse = float(metadata_frame['mse'])
+            mse = float(metadata_frame['mse']) if metadata_frame is not None else 0
             motion_data.append(mse)
-            ave = float(metadata_frame['ave_mse'])
+            ave = float(metadata_frame['ave_mse']) if metadata_frame is not None else 0
             mse_average_data.append(ave)
             if i == 0:
                 min_mse = max_mse = mse
@@ -189,7 +191,8 @@ class RawClipProcessor(object):
         if self.metadata.nframes > self.frame_count:
             metadata_offset -= 1
         def draw_footer(frame_image, frame_number):
-            ts = self.metadata.get_frame(metadata_offset + frame_number)['timestamp']
+            metadata_frame = self.metadata.get_frame(metadata_offset + frame_number)
+            ts = metadata_frame['timestamp'] if metadata_frame is not None else '0000/00/ 00:00:00'
             if self.motion_graph is not None and self.mse_average_graph is not None:
                 cursor_x = int(self.xscaler.scale(frame_number))
                 cursor_y0 = int(self.yscaler.view_min)
@@ -206,9 +209,8 @@ class RawClipProcessor(object):
                         logging.debug(f'line: {previous_point} to {point}')
                         cv2.line(frame_image,previous_point, point, (255, 0, 0), thickness=2)
                     previous_point = point
-            metadataframe = metadata_offset + frame_number
-            metadata = self.metadata.get_frame(metadataframe)
-            message = f'{ts} {float(metadata["mse"]):.2f}'
+            mse = float(metadata_frame["mse"]) if metadata_frame is not None else 0
+            message = f'{ts} {mse:.2f}'
             cv2.putText(frame_image, message, timestamp_origin, cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), thickness=2)
 
         frame_number = 0
