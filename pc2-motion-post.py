@@ -80,6 +80,7 @@ class ClipMetadata(object):
 
 class RawClipProcessor(object):
     DEFAULT_FPS = 30
+    bottom_margin = 10
     def __init__(self, raw_clip_path:Path):
         self.fps = None
         self.motion_graph = None
@@ -125,7 +126,7 @@ class RawClipProcessor(object):
 
     def calculate_motion_graph(self):
         view_x_limits = [0, self.frame_width - 1]
-        view_y_limits = [self.frame_height - 1, self.frame_height - self.frame_height/10]
+        view_y_limits = [self.frame_height - 1 - self.bottom_margin, self.frame_height - self.frame_height/10 - self.bottom_margin]
 
         max_mse = min_mse = None
 
@@ -171,7 +172,12 @@ class RawClipProcessor(object):
             self.mse_average_graph.append((x, y))
 
     def create_raw_video(self):
-        clip_name = self.clip_path.parent.parent.joinpath(f'{self.clip_base_name}.mp4')
+        clip_dir = self.clip_path.parent.parent
+        discard = ''
+        if clip_dir.name == 'raw':
+            clip_dir = clip_dir.parent
+            discard = '_DISCARD'
+        clip_name = clip_dir.joinpath(f'{self.clip_base_name}{discard}.mp4')
         logging.info(f'video output dir: {self.clip_path.parent.parent}')
         frame_files = self.temp_dir.glob('frame_*.png')
 
@@ -191,6 +197,7 @@ class RawClipProcessor(object):
         if self.metadata.nframes > self.frame_count:
             metadata_offset -= 1
         def draw_footer(frame_image, frame_number):
+
             metadata_frame = self.metadata.get_frame(metadata_offset + frame_number)
             ts = metadata_frame['timestamp'] if metadata_frame is not None else '0000/00/ 00:00:00'
             if self.motion_graph is not None and self.mse_average_graph is not None:
@@ -210,7 +217,7 @@ class RawClipProcessor(object):
                         cv2.line(frame_image,previous_point, point, (255, 0, 0), thickness=2)
                     previous_point = point
             mse = float(metadata_frame["mse"]) if metadata_frame is not None else 0
-            message = f'{ts} {mse:.2f}'
+            message = f'{ts} {mse:.2f} {discard}'
             cv2.putText(frame_image, message, timestamp_origin, cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), thickness=2)
 
         frame_number = 0
@@ -237,12 +244,10 @@ class RawClipProcessor(object):
         logging.info(f'Deleting {self.clip_path}')
         self.clip_path.unlink()
         # logging.info(f'Deleteing {self.metadata_path}')
-        # self.metadata_path.unlink()
+        self.metadata_path.unlink()
 
 
-if __name__ == '__main__':
-    args = parse_args()
-    raw_path = Path(f'{args.work_dir}/raw/')
+def process_raw_clips(raw_path):
     logging.info(f'raw_path type: {type(raw_path)}')
     raw_clip_list = []
     glob = raw_path.glob('*.h264')
@@ -258,5 +263,12 @@ if __name__ == '__main__':
         processor.create_raw_video()
         processor.cleanup()
 
-
+if __name__ == '__main__':
+    args = parse_args()
+    raw_path = Path(f'{args.work_dir}/raw/')
+    process_raw_clips(raw_path)
+    discard_path = raw_path.joinpath('discards')
+    if discard_path.exists():
+        logging.info(f'Checking for discards')
+        process_raw_clips(discard_path)
 
