@@ -81,12 +81,13 @@ class ClipMetadata(object):
 class RawClipProcessor(object):
     DEFAULT_FPS = 30
     bottom_margin = 10
-    def __init__(self, raw_clip_path:Path):
+    def __init__(self, raw_clip_path:Path, outdir:Path):
         self.fps = None
         self.motion_graph = None
         self.mse_average_graph = None
         self.title_frame_number = None
         self.clip_path:Path = raw_clip_path
+        self.outdir:Path = outdir
         logging.info(f'Process {self.clip_path.name}')
         self.clip_base_name = raw_clip_path.with_suffix('').name
         self.clip_timestamp = self.clip_base_name.split('_')[0]
@@ -172,13 +173,12 @@ class RawClipProcessor(object):
             self.mse_average_graph.append((x, y))
 
     def create_raw_video(self):
-        clip_dir = self.clip_path.parent.parent
+        clip_dir = self.temp_dir.parent
         discard = ''
-        if clip_dir.name == 'raw':
-            clip_dir = clip_dir.parent
+        if 'discard' in str(self.clip_path):
             discard = '_DISCARD'
         clip_name = clip_dir.joinpath(f'{self.clip_base_name}{discard}.mp4')
-        logging.info(f'video output dir: {self.clip_path.parent.parent}')
+        logging.info(f'video output dir: {clip_dir}')
         frame_files = self.temp_dir.glob('frame_*.png')
 
         size = (self.frame_width, self.frame_height)
@@ -235,6 +235,8 @@ class RawClipProcessor(object):
             video_writer.write(frame_image)
             frame_number += 1
         video_writer.release()
+        # move the file from clip_dir to clip_dir.parent
+        shutil.move(clip_name, self.outdir)
         logging.info(f' - Finished writing {clip_name}')
 
     def cleanup(self):
@@ -249,15 +251,16 @@ class RawClipProcessor(object):
 
 def process_raw_clips(raw_path):
     logging.info(f'raw_path type: {type(raw_path)}')
+    outdir = raw_path.parent
     raw_clip_list = []
-    glob = raw_path.glob('*.h264')
-    for f in glob:
-        raw_clip_list.append(f)
+    raw_clip_list.extend(raw_path.glob('*.h264'))
+    raw_clip_list.extend(raw_path.joinpath('discards').glob('*.h264'))
     raw_clip_list.sort()
+    logging.info(f'Found {len(raw_clip_list)} clips')
     logging.info(f'Motion Post Processing, work dir: {args.work_dir}')
     for raw_clip in raw_clip_list:
         raw_clip_path = os.path.join(raw_path, raw_clip)
-        processor = RawClipProcessor(raw_clip)
+        processor = RawClipProcessor(raw_clip, outdir)
         processor.split_clip()
         processor.calculate_motion_graph()
         processor.create_raw_video()
