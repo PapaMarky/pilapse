@@ -85,6 +85,7 @@ class RawClipProcessor(object):
         self.fps = None
         self.motion_graph = None
         self.mse_average_graph = None
+        self.delta_graph = None
         self.title_frame_number = None
         self.clip_path:Path = raw_clip_path
         self.outdir:Path = outdir
@@ -140,8 +141,10 @@ class RawClipProcessor(object):
                      f'frames, offset: {metadata_offset}')
         self.motion_graph = []
         self.mse_average_graph = []
+        self.delta_graph = []
         motion_data = []
         mse_average_data = []
+        delta_data = []
         for i in range(self.frame_count):
             try:
                 metadata_frame = self.metadata.get_frame(metadata_offset + i)
@@ -149,10 +152,13 @@ class RawClipProcessor(object):
                 logging.error(f'Failed to get metadata for frame {i}')
                 logging.error(f'{self.metadata.nframes} metadata frames, {self.frame_count} frames, offset:')
                 raise e
+            mse_threshold = float(self.metadata.header['mse'])
             mse = float(metadata_frame['mse']) if metadata_frame is not None else 0
             motion_data.append(mse)
             ave = float(metadata_frame['ave_mse']) if metadata_frame is not None else 0
             mse_average_data.append(ave)
+            delta = float(abs(mse - ave))
+            delta_data.append(delta)
             if i == 0:
                 min_mse = max_mse = mse
                 continue
@@ -161,16 +167,25 @@ class RawClipProcessor(object):
             if mse > max_mse:
                 max_mse = mse
                 self.title_frame_number = i
+            if ave < min_mse:
+                min_mse = ave
+            if ave > max_mse:
+                max_mse = ave
 
         self.xscaler = DataScaler([0, self.frame_count - 1], view_x_limits)
-        self.yscaler = DataScaler([min_mse, max_mse], view_y_limits)
+        self.yscaler = DataScaler([0, max(max_mse, mse_threshold * 2.0)], view_y_limits)
 
         for i in range(self.frame_count):
             x = int(self.xscaler.scale(i))
+
             y = int(self.yscaler.scale(motion_data[i]))
             self.motion_graph.append((x, y))
+
             y = int(self.yscaler.scale(mse_average_data[i]))
             self.mse_average_graph.append((x, y))
+
+            y = int(self.yscaler.scale(delta_data[i]))
+            self.delta_graph.append((x, y))
 
     def create_raw_video(self):
         clip_dir = self.temp_dir.parent
@@ -205,19 +220,21 @@ class RawClipProcessor(object):
                 cursor_y0 = int(self.yscaler.view_min)
                 cursor_y1 = int(self.yscaler.view_max)
                 cv2.line(frame_image, (cursor_x, cursor_y0), (cursor_x, cursor_y1), (255, 0, 0), thickness=2)
-                previous_point = None
-                for point in self.mse_average_graph:
-                    if previous_point is not None:
-                        cv2.line(frame_image, previous_point, point, (0, 255, 0), thickness=2)
-                    previous_point = point
-                previous_point = None
-                for point in self.motion_graph:
-                    if previous_point is not None:
-                        logging.debug(f'line: {previous_point} to {point}')
-                        cv2.line(frame_image,previous_point, point, (255, 0, 0), thickness=2)
-                    previous_point = point
+
+                def draw_graph(graph, color):
+                    previous_point = None
+                    for point in graph:
+                        if previous_point is not None:
+                            cv2.line(frame_image, previous_point, point, color, thickness=2)
+                        previous_point = point
+
+                draw_graph(self.mse_average_graph, (0, 255, 0))
+                draw_graph(self.motion_graph, (255, 0, 0))
+                draw_graph(self.delta_graph, (255, 255, 0))
+
             mse = float(metadata_frame["mse"]) if metadata_frame is not None else 0
-            message = f'{ts} {mse:.2f} {discard}'
+            average = float(metadata_frame["ave_mse"]) if metadata_frame is not None else 0
+            message = f'{ts} m{mse:.2f} a{average:.2f} d{abs(mse - average):.2f} {discard}'
             cv2.putText(frame_image, message, timestamp_origin, cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), thickness=2)
 
         frame_number = 0
@@ -270,8 +287,4 @@ if __name__ == '__main__':
     args = parse_args()
     raw_path = Path(f'{args.work_dir}/raw/')
     process_raw_clips(raw_path)
-    discard_path = raw_path.joinpath('discards')
-    if discard_path.exists():
-        logging.info(f'Checking for discards')
-        process_raw_clips(discard_path)
 
