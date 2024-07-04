@@ -32,13 +32,12 @@ while True:
     run(pull_command)
 
     if not args.timelapse:
-        now2 = datetime.now()
-        if now.hour != now2.hour:
-            print('### Get last of yesterday')
-            # h264_cmd = f'python3 /Users/mark/git/pilapse/h264_to_mov.py {HOST}/{now.strftime("%Y%m%d")}-motion2/ --all --delete'
-            h264_cmd = f'python3 /Users/mark/git/pilapse/pc2-motion-post.py {HOST}/{now.strftime("%Y%m%d")}-motion2'
-            run(h264_cmd)
-            now = now2
+        now = datetime.now()
+        yesterday = now - timedelta(days=1)
+        print('### Get last of yesterday')
+        # h264_cmd = f'python3 /Users/mark/git/pilapse/h264_to_mov.py {HOST}/{now.strftime("%Y%m%d")}-motion2/ --all --delete'
+        h264_cmd = f'python3 /Users/mark/git/pilapse/pc2-motion-post.py {HOST}/{yesterday.strftime("%Y%m%d")}-motion2'
+        run(h264_cmd)
         # h264_cmd = f'python3 /Users/mark/git/pilapse/h264_to_mov.py {HOST}/{now.strftime("%Y%m%d")}-motion2/ --all --delete'
         h264_cmd = f'python3 /Users/mark/git/pilapse/pc2-motion-post.py {HOST}/{now.strftime("%Y%m%d")}-motion2'
         run(h264_cmd)
