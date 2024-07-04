@@ -78,6 +78,12 @@ class ClipMetadata(object):
         self.parse_header(header)
         self.load_framedata(content)
 
+RED = (0, 0, 255)
+GREEN = (0, 255, 0)
+BLUE = (255, 0, 0)
+YELLOW = (0, 255, 255)
+TURQUOIS = (255, 255, 0)
+MAGENTA = (255, 0, 255)
 class RawClipProcessor(object):
     DEFAULT_FPS = 30
     bottom_margin = 10
@@ -111,7 +117,28 @@ class RawClipProcessor(object):
         logging.info(f'Splitting {self.clip_path.name} into Frames')
         # pass one, pull out frames, numbering frame00000, frame00001, etc
         video_capture = cv2.VideoCapture(str(self.clip_path))
-        self.fps = int(video_capture.get(cv2.CAP_PROP_FPS))
+        # TODO check first frame fps, last frame fps and clip fps. 2 out of 3 wins
+        self.fps = int(self.metadata.fps)
+        logging.info(f'No FPS in metadata, checking first and last frames.')
+        fps_data = {}
+        for frame in self.metadata.framedata:
+            fps = frame['fps']
+            if fps not in fps_data:
+                fps_data[fps] = 0
+            fps_data[fps] += 1
+
+        logging.info(f'--- FPS DATA ---')
+        clip_fps = None
+        for k,v in fps_data.items():
+            logging.info(f' {k}: {v}')
+            if clip_fps is None:
+                clip_fps = k
+            else:
+                if v > fps_data[clip_fps]:
+                    clip_fps = k
+        logging.info(f' - clip_fps: {clip_fps}')
+
+        self.fps = int(clip_fps)
         self.frame_width = int(video_capture.get(cv2.CAP_PROP_FRAME_WIDTH))
         self.frame_height = int(video_capture.get(cv2.CAP_PROP_FRAME_HEIGHT))
         self.frame_count = 0
@@ -141,6 +168,7 @@ class RawClipProcessor(object):
                      f'frames, offset: {metadata_offset}')
         self.motion_graph = []
         self.mse_average_graph = []
+        self.mse_line = []
         self.delta_graph = []
         motion_data = []
         mse_average_data = []
@@ -173,7 +201,11 @@ class RawClipProcessor(object):
                 max_mse = ave
 
         self.xscaler = DataScaler([0, self.frame_count - 1], view_x_limits)
-        self.yscaler = DataScaler([0, max(max_mse, mse_threshold * 2.0)], view_y_limits)
+        # self.yscaler = DataScaler([0, max(max_mse, mse_threshold * 2.0)], view_y_limits)
+        self.yscaler = DataScaler([0, mse_threshold * 2.0], view_y_limits)
+
+        Y = int(self.yscaler.scale(mse_threshold))
+        self.mse_line = [(view_x_limits[0], Y), (view_x_limits[1], Y)]
 
         for i in range(self.frame_count):
             x = int(self.xscaler.scale(i))
@@ -193,13 +225,13 @@ class RawClipProcessor(object):
         if 'discard' in str(self.clip_path):
             discard = '_DISCARD'
         clip_name = clip_dir.joinpath(f'{self.clip_base_name}{discard}.mp4')
-        logging.info(f'video output dir: {clip_dir}')
+        logging.info(f'video output dir: {clip_dir}, clip fps: {self.fps}')
         frame_files = self.temp_dir.glob('frame_*.png')
 
         size = (self.frame_width, self.frame_height)
         fourcc = cv2.VideoWriter_fourcc('m', 'p', '4', 'v')
         video_writer = cv2.VideoWriter()
-        video_writer.open(str(clip_name), fourcc, self.fps, size)
+        video_writer.open(str(clip_name), fourcc, int(self.fps), size)
         frame_file_list = []
         for frame in frame_files:
             frame_file_list.append(frame)
@@ -228,14 +260,15 @@ class RawClipProcessor(object):
                             cv2.line(frame_image, previous_point, point, color, thickness=2)
                         previous_point = point
 
-                draw_graph(self.mse_average_graph, (0, 255, 0))
-                draw_graph(self.motion_graph, (255, 0, 0))
-                draw_graph(self.delta_graph, (255, 255, 0))
+                draw_graph(self.mse_line, YELLOW)
+                draw_graph(self.mse_average_graph, GREEN)
+                draw_graph(self.motion_graph, BLUE)
+                draw_graph(self.delta_graph, TURQUOIS)
 
             mse = float(metadata_frame["mse"]) if metadata_frame is not None else 0
             average = float(metadata_frame["ave_mse"]) if metadata_frame is not None else 0
-            message = f'{ts} m{mse:.2f} a{average:.2f} d{abs(mse - average):.2f} {discard}'
-            cv2.putText(frame_image, message, timestamp_origin, cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), thickness=2)
+            message = f'{ts} m{mse:.2f} a{average:.2f} d{abs(mse - average):.2f} fps{self.fps:.0f} {discard}'
+            cv2.putText(frame_image, message, timestamp_origin, cv2.FONT_HERSHEY_SIMPLEX, 1, RED, thickness=2)
 
         frame_number = 0
         timestamp_origin = (30, self.frame_height - 60)
@@ -263,7 +296,7 @@ class RawClipProcessor(object):
         logging.info(f'Deleting {self.clip_path}')
         self.clip_path.unlink()
         # logging.info(f'Deleteing {self.metadata_path}')
-        self.metadata_path.unlink()
+        # self.metadata_path.unlink()
 
 
 def process_raw_clips(raw_path):
