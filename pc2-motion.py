@@ -21,7 +21,6 @@ import libcamera
 
 from pprint import *
 
-N = 1.5
 class RingBuffer(object):
     def __init__(self, size_max):
         self.max = size_max
@@ -80,6 +79,8 @@ class FrameDataBuffer(RingBuffer):
 
 class MotionAveragingBuffer(RingBuffer):
     """ class that implements a not-yet-full buffer """
+    N = 1.5
+
     def __init__(self, size_max):
         super().__init__(size_max)
         self._total = 0
@@ -94,9 +95,10 @@ class MotionAveragingBuffer(RingBuffer):
         """ Append an element overwriting the oldest one. """
         # If the new value is significantly bigger than the average, feed the average into the ring buffer so
         # that the average is not affected by the spikes.
-        self._motion_detected = (x >= self.average * N)
+        self._motion_detected = (x >= self.average * self.N)
         if self._motion_detected:
-            x = self.average
+            # if motion is detected, don't increase the average by the full difference.
+            x = self.average + (x - self.average) / 3
 
         old_x = self.data[self.cur]
         self._total += x - old_x
@@ -241,7 +243,7 @@ class MotionCamera(object):
         self.outdir = ''
         self.tempdir = '/home/pi/inbox'
         os.makedirs(self.tempdir, exist_ok=True)
-        self.buffer = MotionAveragingBuffer(self.BUFFER_SIZE * 9)
+        self.average_buffer = MotionAveragingBuffer(self.BUFFER_SIZE * 9)
 
         self.picam2 = Picamera2()
         # pprint(self.picam2.sensor_modes)
@@ -338,7 +340,8 @@ class MotionCamera(object):
         # 5 seconds X FramesPerSecond
         print(f'BUFFER_SIZE = {self.BUFFER_SIZE} (fps: {self.fps}, seconds: {args.seconds}) MSE Threshold: {self.MAX_MSE}')
         self.encoder.output = CircularOutput(buffersize=self.BUFFER_SIZE)
-        clip_data = f'version: 1, mse: {args.mse}, delta: {args.delta}, minmotion: {args.minmotion}, seconds: {args.seconds}, lux_lo: {args.lux_lo}, lux_hi: {args.lux_hi}, zoom: {args.zoom}'
+        # fps here is just the fps for daytime, not the actual fps of an individule clip
+        clip_data = f'version: 1, mse: {args.mse}, delta: {args.delta}, minmotion: {args.minmotion}, seconds: {args.seconds}, lux_lo: {args.lux_lo}, lux_hi: {args.lux_hi}, zoom: {args.zoom}, fps: {self.fps}'
         self.frame_data_buffer = FrameDataBuffer(self.BUFFER_SIZE, clip_data)
         # picam2.encoder = encoder
         print(f'encoder: {self.encoder}')
@@ -362,7 +365,7 @@ class MotionCamera(object):
                 gain = metadata['AnalogueGain']
                 ts = datetime.strftime(now, '%Y/%m/%d %H:%M:%S.%f')
 
-                motion = (self.mse - self.average > self.delta) or (self.mse - self.average > self.delta) or self.buffer.motion_detected
+                motion = (self.mse - self.average > self.delta) or self.average_buffer.motion_detected
                 if motion and not self.frame_data_buffer.is_writing():
                     self.frame_data_buffer.start_clip(self.file_basename + '_data.txt')
 
@@ -410,7 +413,7 @@ class MotionCamera(object):
                         cv2.circle(m.array, origin_red_dot, radius, RED, -1)
                     if blue_motion:
                         cv2.circle(m.array, origin_blue_dot, radius, BLUE, -1)
-                    if self.buffer is not None and self.buffer.motion_detected:
+                    if self.average_buffer is not None and self.average_buffer.motion_detected:
                         cv2.circle(m.array, origin_green_dot, radius, GREEN, -1)
 
         self.picam2.post_callback = add_mse
@@ -485,13 +488,13 @@ class MotionCamera(object):
                 # previous frame
                 self.mse = np.square(np.subtract(cur, prev)).mean()
                 # "average" is the baseline level of motion (caused by wind, cloud shadows, etc)
-                self.average = self.buffer.append(self.mse)
+                self.average = self.average_buffer.append(self.mse)
                 date_time_string = self.now.strftime('%Y%m%d-%H%M%S.%f')
                 current_delta = self.mse - self.average
                 self.total_frames += 1
                 # compare the average to the mse. If self.mse is N above average, motion detected
                 # blue_motion = self.mse - self.average > self.delta
-                if (self.mse - self.average > self.delta) or (current_delta > self.delta) or self.buffer.motion_detected:
+                if (current_delta > self.delta) or self.average_buffer.motion_detected:
                     if not self.encoding:
                         self.max_mse = self.mse
                         self.total_frames = 0
@@ -527,7 +530,7 @@ class MotionCamera(object):
                         new_file_name = ''
                         discarding = ''
                         am = self.total_mse / self.motion_frames if self.motion_frames > 0 else 100
-                        # self.buffer.motion_detected is per frame, not per clip. Can we use it?
+                        # self.average_buffer.motion_detected is per frame, not per clip. Can we use it?
                         discard = ((self.consecutive_frames < self.cf_threshold) or (am < 0.9))
                         self.motion_frames = 0
                         if discard:
