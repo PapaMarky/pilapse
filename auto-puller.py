@@ -11,7 +11,7 @@ now = datetime.now()
 
 parser = argparse.ArgumentParser('Auto Pull frames / clips from PiCam')
 parser.add_argument('--timelapse', action='store_true', help='Pull timelapse frames')
-parser.add_argument('--pause', help='Number of seconds to pause', type=int, default=10)
+parser.add_argument('--pause', help='Number of seconds to pause', type=int, default=30)
 parser.add_argument('host')
 
 args = parser.parse_args()
